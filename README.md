@@ -1,5 +1,7 @@
 # AgentCheck
 
+[![CI](https://github.com/princemittalr/agentcheck/actions/workflows/ci.yml/badge.svg)](https://github.com/princemittalr/agentcheck/actions/workflows/ci.yml)
+
 AgentCheck is a statistical decision layer for LLM agent evaluations, built on
 [Inspect](https://inspect.aisi.org.uk/). It is not a new eval framework. Given eval logs
 for a baseline and a candidate agent, it answers one question: **regression, improvement,
