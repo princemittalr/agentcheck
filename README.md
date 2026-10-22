@@ -21,7 +21,7 @@ agentcheck compare base.eval cand.eval
 Put `GROQ_API_KEY=...` in `.env` (git-ignored), then:
 
 ```
-python -m agentcheck.run --model groq/openai/gpt-oss-20b --epochs 1 --max-calls 252 --max-tokens 360000
+python -m agentcheck.run --model groq/qwen/qwen3.8-27b --epochs 1 --max-calls 660 --max-tokens 960000
 ```
 
 The runner prints the worst-case number of model calls and tokens first and refuses to
@@ -50,7 +50,7 @@ the conditions under which it fails.
 
 ## Limitations
 
-- The task suite is 36 synthetic warehouse questions; no statistics are implemented yet.
+- The task suite is 60 synthetic warehouse questions in 8 categories; no statistics are implemented yet.
 - No results have been measured.
 
 ## Development

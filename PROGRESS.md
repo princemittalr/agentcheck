@@ -25,7 +25,9 @@ Last updated: 2026-10-22
 - [x] Step 1: inventory lookup task (5 samples, 1 tool, numeric-match scorer) with offline mockllm tests; verified on Windows (8 passed; mockllm demo 5 samples, accuracy 0.000 as expected)
 - [x] Step 2: capped runner (`python -m agentcheck.run`), first real Groq run (steps 1 and 2 landed together in commit e7ca6c4)
 - [ ] Step 3: 36-sample suite (5 categories, 2 tools, ANSWER-line scorer); 1-epoch difficulty check
-- [ ] Step 4: epochs = 5 run; read logs programmatically
+- [x] Step 3 difficulty check on 3 models (see results); gpt-oss-20b dominated by Groq parse errors, the other two at ceiling
+- [ ] Step 4: suite v3, 60 samples (3 harder categories, reorder-level tool); difficulty check on qwen3.8-27b
+- [ ] Step 5: epochs = 5 run; read logs programmatically
 
 ## Key design decisions
 
@@ -44,7 +46,11 @@ Last updated: 2026-10-22
 - **Deterministic scoring via a final `ANSWER: <value>` line** (replaced `match(numeric=True)` in M1 step 3): works for numbers, SKUs and UNKNOWN; last ANSWER line wins; normalisation ignores case, `$`, commas, markdown and trailing `.0` only. No LLM judge in the pass/fail path.
 - **Five difficulty categories (single/value/total/most/unknown)**: a suite every model aces (ceiling effect) can't show a regression; `unknown` uses near-miss SKUs to test refusing to guess.
 - **Targets checked by hand in tests**, not only recomputed by the code that builds them.
-- **message_limit raised 8 -> 16** for multi-lookup questions: worst case 7 calls per sample.
+- **message_limit raised 8 -> 16 -> 24** for multi-lookup questions: worst case 11 calls per sample.
+- **Primary model: `groq/qwen/qwen3.8-27b`**: 0 output errors and fewest calls of the 3 tool-calling models on MNV's key; gpt-oss-20b's 13/36 parse failures would swamp a 10-point regression.
+- **gpt-oss-20b kept as a candidate "weaker model" regression for M5**: its failures are real failures of that agent stack.
+- **Suite v3 adds harder categories (reorder, portfolio, orders)**: at 100% baseline, A/A tests are vacuous (no discordant pairs, so a false alarm is impossible) and nothing can register as an improvement.
+- **`--seed` refused with `--epochs > 1`**: the same seed goes to every epoch, which could replay identical outputs and hide the run-to-run variance we're measuring.
 - **Fictional tool data**: the model can only answer by calling the tool, so the task measures tool use, not memorised facts.
 - **`ToolError` for bad tool input, nothing else caught**: the model sees a recoverable error; real bugs still fail the sample loudly.
 - **Two narrow pytest warning ignores for inspect_ai internals** (tenacity deprecation, unclosed anyio stream): exact-message filters, everything else still errors.
@@ -67,11 +73,15 @@ Every number here comes from a pasted run output.
 Attempt 2026-10-22, 36 x 1: stopped by a rate-limit error (TPM 8,000) after 10 of 36 samples, 28 calls, 9,848 tokens. No accuracy recorded from a partial run.
 Attempt 2026-10-22, 36 x 1 (after the rate-limit fix): stopped by Groq 400 `output_parse_failed` after 14 of 36 samples, 38 calls, 13,688 tokens. No accuracy recorded.
 
-Note: n = 5 is far too small for any conclusion; 5/5 also shows the ceiling effect that motivated the harder suite in step 3.
+| 2026-10-22 | inventory v2 (36 samples) | groq/openai/gpt-oss-20b, seed 0 | 36 x 1 | 22/36 (0.611); 13 of the 14 failures were Groq `output_parse_failed` | 86 calls (bound 252), 31,204 tokens | $0 |
+| 2026-10-22 | inventory v2 (36 samples) | groq/qwen/qwen3.8-27b, seed 0 | 36 x 1 | 36/36 (1.000); 0 output errors | 72 calls (bound 252), 41,951 tokens | $0 |
+| 2026-10-22 | inventory v2 (36 samples) | groq/openai/gpt-oss-120b, seed 0 | 36 x 1 | 35/36 (0.972); 0 output errors | 111 calls (bound 252), 45,414 tokens | $0 |
+
+Note: single runs, no intervals yet (Wilson intervals arrive in M2). n = 5 is far too small for any conclusion; 5/5 also shows the ceiling effect that motivated the harder suite in step 3.
 
 ## Open questions
 
 - inspect_ai 0.3.283 emits a tenacity DeprecationWarning and an unclosed anyio stream warning in tests. Check after upgrades; possibly worth an upstream issue (M8 contact).
-- Groq free tier for gpt-oss-20b: 8,000 tokens/minute (from a 429 message). Requests and tokens per day still unknown; needed to size the 5-epoch run.
+- Groq free tier for gpt-oss-20b: 8,000 tokens/minute (from a 429 message). Daily limits unknown; a 429 on a per-day limit will stop a run with a clear error.
 - Inspect prints "Control server failed to start ... no attribute 'AF_UNIX'" on Windows. Harmless (optional feature), evals run normally.
 - License for the repo (MIT is a common default).

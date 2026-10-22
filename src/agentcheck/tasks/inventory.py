@@ -9,6 +9,9 @@ that every model aces cannot show a regression.
   total    three lookups, add               -> combined units
   most     three lookups, compare           -> SKU with the most units
   unknown  SKU that does not exist          -> UNKNOWN (tests refusing to guess)
+  reorder  10 lookups, compare per SKU      -> how many of 5 SKUs need reordering
+  portfolio 8 lookups, multiply and add     -> total dollar value of 4 SKUs
+  orders   2 lookups, conditional logic     -> units left after two orders
 """
 
 import re
@@ -26,21 +29,22 @@ from inspect_ai.tool import Tool, ToolError, tool
 class Item:
     stock: int  # units
     price: int  # whole dollars per unit
+    reorder: int  # reorder when stock is at or below this level
 
 
 CATALOG: dict[str, Item] = {
-    "SKU-1042": Item(37, 12),
-    "SKU-2177": Item(0, 85),
-    "SKU-3305": Item(412, 3),
-    "SKU-4419": Item(8, 240),
-    "SKU-5583": Item(1250, 1),
-    "SKU-6021": Item(96, 17),
-    "SKU-6650": Item(23, 49),
-    "SKU-7108": Item(311, 6),
-    "SKU-7734": Item(54, 31),
-    "SKU-8266": Item(5, 999),
-    "SKU-8890": Item(142, 11),
-    "SKU-9317": Item(77, 26),
+    "SKU-1042": Item(37, 12, 40),
+    "SKU-2177": Item(0, 85, 10),
+    "SKU-3305": Item(412, 3, 100),
+    "SKU-4419": Item(8, 240, 8),
+    "SKU-5583": Item(1250, 1, 500),
+    "SKU-6021": Item(96, 17, 120),
+    "SKU-6650": Item(23, 49, 20),
+    "SKU-7108": Item(311, 6, 300),
+    "SKU-7734": Item(54, 31, 60),
+    "SKU-8266": Item(5, 999, 2),
+    "SKU-8890": Item(142, 11, 150),
+    "SKU-9317": Item(77, 26, 77),
 }
 
 SYSTEM_PROMPT = (
@@ -50,9 +54,9 @@ SYSTEM_PROMPT = (
     "'ANSWER: <value>', where <value> is a number (digits only), a SKU, or UNKNOWN."
 )
 
-# Per-sample cap on messages. The hardest category needs 3 lookups plus an answer;
-# 16 leaves room for retries after a tool error and bounds a looping model at 7 calls.
-MESSAGE_LIMIT = 16
+# Per-sample cap on messages. The hardest category (reorder) needs 10 lookups; done one
+# per call that is 2 + 20 + 1 = 23 messages. 24 bounds a looping model at 11 calls.
+MESSAGE_LIMIT = 24
 
 
 def _get(sku: str) -> Item:
@@ -74,6 +78,22 @@ def lookup_stock() -> Tool:
             The number of units in stock, as digits.
         """
         return str(_get(sku).stock)
+
+    return execute
+
+
+@tool
+def lookup_reorder_level() -> Tool:
+    async def execute(sku: str) -> str:
+        """Look up the reorder level of a product: reorder when stock is at or below it.
+
+        Args:
+            sku: The product SKU, for example "SKU-1042".
+
+        Returns:
+            The reorder level in units, as digits.
+        """
+        return str(_get(sku).reorder)
 
     return execute
 
@@ -115,6 +135,45 @@ TRIPLES = [
     ("SKU-4419", "SKU-6021", "SKU-7108"),
     ("SKU-8266", "SKU-2177", "SKU-1042"),
 ]
+QUINTUPLES = [
+    ("SKU-1042", "SKU-3305", "SKU-4419", "SKU-6650", "SKU-8266"),
+    ("SKU-2177", "SKU-5583", "SKU-6021", "SKU-7108", "SKU-9317"),
+    ("SKU-7734", "SKU-8890", "SKU-1042", "SKU-3305", "SKU-5583"),
+    ("SKU-4419", "SKU-9317", "SKU-6021", "SKU-2177", "SKU-7734"),
+    ("SKU-6650", "SKU-7108", "SKU-8266", "SKU-3305", "SKU-5583"),
+    ("SKU-8890", "SKU-6021", "SKU-7734", "SKU-1042", "SKU-2177"),
+    ("SKU-9317", "SKU-4419", "SKU-6650", "SKU-8890", "SKU-7108"),
+    ("SKU-5583", "SKU-8266", "SKU-3305", "SKU-7108", "SKU-6650"),
+]
+QUADRUPLES = [
+    ("SKU-1042", "SKU-3305", "SKU-6021", "SKU-9317"),
+    ("SKU-4419", "SKU-6650", "SKU-7734", "SKU-8890"),
+    ("SKU-8266", "SKU-7108", "SKU-5583", "SKU-1042"),
+    ("SKU-2177", "SKU-6021", "SKU-8890", "SKU-3305"),
+    ("SKU-9317", "SKU-7734", "SKU-4419", "SKU-7108"),
+    ("SKU-6650", "SKU-8266", "SKU-6021", "SKU-5583"),
+    ("SKU-3305", "SKU-9317", "SKU-8890", "SKU-4419"),
+    ("SKU-7108", "SKU-1042", "SKU-7734", "SKU-8266"),
+]
+# (sku_a, units_a, sku_b, units_b); some orders exceed stock and must be rejected.
+ORDERS = [
+    ("SKU-1042", 30, "SKU-6650", 30),
+    ("SKU-3305", 400, "SKU-4419", 9),
+    ("SKU-7734", 54, "SKU-9317", 70),
+    ("SKU-2177", 1, "SKU-8890", 142),
+    ("SKU-5583", 1300, "SKU-6021", 50),
+    ("SKU-8266", 5, "SKU-7108", 312),
+    ("SKU-6650", 23, "SKU-1042", 38),
+    ("SKU-9317", 10, "SKU-3305", 12),
+]
+
+
+def units_left(sku: str, ordered: int) -> int:
+    """An order is filled only if stock covers it entirely; otherwise it is rejected."""
+    stock = CATALOG[sku].stock
+    return stock - ordered if ordered <= stock else stock
+
+
 # Near-misses of real SKUs (one digit off, transposed) plus clearly fake ones.
 UNKNOWN = ["SKU-1043", "SKU-4491", "SKU-6605", "SKU-7801", "SKU-0000", "SKU-9999"]
 
@@ -157,6 +216,38 @@ def build_dataset() -> MemoryDataset:
                 input=f"Which of {listed} has the most units in stock? Answer with the SKU.",
                 target=max(skus, key=lambda s: CATALOG[s].stock),
                 metadata={"category": "most"},
+            )
+        )
+    for i, skus5 in enumerate(QUINTUPLES):
+        samples.append(
+            Sample(
+                id=f"reorder-{i}",
+                input=f"How many of {', '.join(skus5)} need reordering, i.e. have stock at "
+                "or below their reorder level?",
+                target=str(sum(CATALOG[s].stock <= CATALOG[s].reorder for s in skus5)),
+                metadata={"category": "reorder"},
+            )
+        )
+    for i, skus4 in enumerate(QUADRUPLES):
+        samples.append(
+            Sample(
+                id=f"portfolio-{i}",
+                input=f"What is the total value in dollars of all stock of {', '.join(skus4)} "
+                "combined (for each SKU, units in stock times unit price, then add)?",
+                target=str(sum(CATALOG[s].stock * CATALOG[s].price for s in skus4)),
+                metadata={"category": "portfolio"},
+            )
+        )
+    for i, (a, n, b, m) in enumerate(ORDERS):
+        samples.append(
+            Sample(
+                id=f"orders-{i}",
+                input=f"Two orders arrive: {n} units of {a} and {m} units of {b}. An order is "
+                "filled only if there is enough stock for all of it; otherwise it is rejected "
+                f"and stock is unchanged. After both orders, how many units of {a} and {b} "
+                "remain in total?",
+                target=str(units_left(a, n) + units_left(b, m)),
+                metadata={"category": "orders"},
             )
         )
     for sku in UNKNOWN:
@@ -252,7 +343,7 @@ def inventory_lookup() -> Task:
         dataset=build_dataset(),
         solver=[
             system_message(SYSTEM_PROMPT),
-            use_tools(lookup_stock(), lookup_price()),
+            use_tools(lookup_stock(), lookup_price(), lookup_reorder_level()),
             generate_scoring_output_errors(),
         ],
         scorer=answer_line(),

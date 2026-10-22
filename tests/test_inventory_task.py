@@ -18,6 +18,7 @@ from agentcheck.tasks.inventory import (
     extract_answer,
     inventory_lookup,
     lookup_price,
+    lookup_reorder_level,
     lookup_stock,
     model_output_error_code,
     normalize,
@@ -61,9 +62,10 @@ def accuracy(log: EvalLog) -> float:
 def test_tools_return_catalog_values() -> None:
     assert asyncio.run(lookup_stock()(sku="SKU-3305")) == "412"
     assert asyncio.run(lookup_price()(sku="SKU-8266")) == "999"
+    assert asyncio.run(lookup_reorder_level()(sku="SKU-9317")) == "77"
 
 
-@pytest.mark.parametrize("tool_factory", [lookup_stock, lookup_price])
+@pytest.mark.parametrize("tool_factory", [lookup_stock, lookup_price, lookup_reorder_level])
 def test_tools_raise_tool_error_for_unknown_sku(tool_factory: object) -> None:
     assert callable(tool_factory)
     with pytest.raises(ToolError, match="Unknown SKU"):
@@ -78,7 +80,16 @@ def test_dataset_size_ids_and_categories() -> None:
     assert len(samples) >= 30
     assert len({s.id for s in samples}) == len(samples)
     counts = Counter(str((s.metadata or {})["category"]) for s in samples)
-    assert counts == {"single": 6, "value": 8, "total": 8, "most": 8, "unknown": 6}
+    assert counts == {
+        "single": 6,
+        "value": 8,
+        "total": 8,
+        "most": 8,
+        "unknown": 6,
+        "reorder": 8,
+        "portfolio": 8,
+        "orders": 8,
+    }
 
 
 def test_hand_checked_targets() -> None:
@@ -90,6 +101,14 @@ def test_hand_checked_targets() -> None:
     assert targets["total-0"] == "114"  # 37 + 23 + 54
     assert targets["most-3"] == "SKU-5583"  # 1250 > 412 > 77
     assert targets["unknown-SKU-1043"] == "UNKNOWN"
+    # reorder-3: 8<=8, 77<=77, 96<=120, 0<=10, 54<=60 -> all five (two boundary cases)
+    assert targets["reorder-3"] == "5"
+    # reorder-0: 37<=40 yes, 412>100, 8<=8 yes, 23>20, 5>2
+    assert targets["reorder-0"] == "2"
+    assert targets["portfolio-0"] == "5314"  # 444 + 1236 + 1632 + 2002
+    assert targets["orders-0"] == "30"  # 37-30 filled = 7; 30 > 23 rejected = 23
+    assert targets["orders-2"] == "7"  # exactly 54 of 54 is filled = 0; 77-70 = 7
+    assert targets["orders-6"] == "37"  # 23 of 23 filled = 0; 38 > 37 rejected = 37
 
 
 def test_most_questions_have_no_ties() -> None:

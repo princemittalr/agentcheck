@@ -114,7 +114,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     p.add_argument("--limit", type=int, default=None, help="first N samples only")
     p.add_argument("--max-calls", type=int, required=True, help="hard cap on model calls")
     p.add_argument("--max-tokens", type=int, required=True, help="hard cap on total tokens")
-    p.add_argument("--token-limit-per-sample", type=int, default=10_000)
+    p.add_argument("--token-limit-per-sample", type=int, default=16_000)
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--log-dir", default="logs")
     return p.parse_args(argv)
@@ -134,6 +134,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"  worst case: {budget.max_model_calls} model calls "
         f"({budget.max_http_requests} HTTP requests with retries), {budget.max_tokens} tokens"
     )
+    if args.seed is not None and args.epochs > 1:
+        # The same seed is sent for every epoch, so epochs could be identical replays:
+        # that hides exactly the run-to-run variance AgentCheck exists to measure.
+        print("REFUSED: --seed with --epochs > 1 would repeat one sample path.", file=sys.stderr)
+        return 2
     try:
         check_budget(budget, args.max_calls, args.max_tokens)
     except BudgetExceededError as e:

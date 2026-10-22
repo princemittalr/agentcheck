@@ -76,3 +76,14 @@ def test_cli_refuses_over_budget_before_sending_anything(
     assert code == 2
     assert "REFUSED" in capsys.readouterr().err
     assert not log_dir.exists()
+
+
+def test_cli_refuses_fixed_seed_with_multiple_epochs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log_dir = tmp_path / "logs"
+    args = ["--model", MOCK, "--epochs", "5", "--seed", "0", "--log-dir", str(log_dir)]
+    code = main([*args, "--max-calls", "100000", "--max-tokens", "100000000"])
+    assert code == 2
+    assert "--seed" in capsys.readouterr().err
+    assert not log_dir.exists()
