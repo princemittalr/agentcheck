@@ -23,8 +23,9 @@ Last updated: 2026-10-22
 
 ### M1 steps
 - [x] Step 1: inventory lookup task (5 samples, 1 tool, numeric-match scorer) with offline mockllm tests; verified on Windows (8 passed; mockllm demo 5 samples, accuracy 0.000 as expected)
-- [ ] Step 2: capped runner (`python -m agentcheck.run`), first real Groq run
-- [ ] Step 3: grow suite to 30+ samples across several tools; epochs >= 5
+- [x] Step 2: capped runner (`python -m agentcheck.run`), first real Groq run (steps 1 and 2 landed together in commit e7ca6c4)
+- [ ] Step 3: 36-sample suite (5 categories, 2 tools, ANSWER-line scorer); 1-epoch difficulty check
+- [ ] Step 4: epochs = 5 run; read logs programmatically
 
 ## Key design decisions
 
@@ -40,7 +41,10 @@ Last updated: 2026-10-22
 - **Python 3.14 locally, `requires-python >= 3.11`**: wheels for inspect_ai, numpy and scipy exist for 3.14 on Windows (checked 2026-10-22); CI also tests 3.11.
 - **inspect-ai pinned `>=0.3.283,<0.4`**: API details were read from the installed 0.3.283 source; upgrades must be deliberate.
 - **Offline tests via Inspect's `mockllm` with scripted outputs and explicit token usage**: zero cost, deterministic, and no tiktoken download in CI.
-- **Deterministic scoring with `match(numeric=True)`**: same transcript always gets the same score; no LLM judge in the pass/fail path.
+- **Deterministic scoring via a final `ANSWER: <value>` line** (replaced `match(numeric=True)` in M1 step 3): works for numbers, SKUs and UNKNOWN; last ANSWER line wins; normalisation ignores case, `$`, commas, markdown and trailing `.0` only. No LLM judge in the pass/fail path.
+- **Five difficulty categories (single/value/total/most/unknown)**: a suite every model aces (ceiling effect) can't show a regression; `unknown` uses near-miss SKUs to test refusing to guess.
+- **Targets checked by hand in tests**, not only recomputed by the code that builds them.
+- **message_limit raised 8 -> 16** for multi-lookup questions: worst case 7 calls per sample.
 - **Fictional tool data**: the model can only answer by calling the tool, so the task measures tool use, not memorised facts.
 - **`ToolError` for bad tool input, nothing else caught**: the model sees a recoverable error; real bugs still fail the sample loudly.
 - **Two narrow pytest warning ignores for inspect_ai internals** (tenacity deprecation, unclosed anyio stream): exact-message filters, everything else still errors.
@@ -52,7 +56,13 @@ Last updated: 2026-10-22
 
 ## Measured results
 
-None yet. Every number here will come from a pasted run output, with date, model and run count.
+Every number here comes from a pasted run output.
+
+| Date | Suite | Model | Samples x epochs | Result | Calls / tokens | Cost |
+|---|---|---|---|---|---|---|
+| 2026-10-22 | inventory v1 (5 single-lookup samples) | groq/openai/gpt-oss-20b, seed 0 | 5 x 1 | 5/5 correct | 10 calls (bound 15), 2,553 tokens | $0 (free tier) |
+
+Note: n = 5 is far too small for any conclusion; 5/5 also shows the ceiling effect that motivated the harder suite in step 3.
 
 ## Open questions
 

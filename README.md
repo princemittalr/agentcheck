@@ -21,7 +21,7 @@ agentcheck compare base.eval cand.eval
 Put `GROQ_API_KEY=...` in `.env` (git-ignored), then:
 
 ```
-python -m agentcheck.run --model groq/openai/gpt-oss-20b --epochs 1 --max-calls 15 --max-tokens 30000
+python -m agentcheck.run --model groq/openai/gpt-oss-20b --epochs 1 --max-calls 252 --max-tokens 360000
 ```
 
 The runner prints the worst-case number of model calls and tokens first and refuses to
@@ -50,7 +50,7 @@ the conditions under which it fails.
 
 ## Limitations
 
-- Only a 5-sample inventory lookup task exists so far; no statistics are implemented.
+- The task suite is 36 synthetic warehouse questions; no statistics are implemented yet.
 - No results have been measured.
 
 ## Development

@@ -104,7 +104,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     p.add_argument("--limit", type=int, default=None, help="first N samples only")
     p.add_argument("--max-calls", type=int, required=True, help="hard cap on model calls")
     p.add_argument("--max-tokens", type=int, required=True, help="hard cap on total tokens")
-    p.add_argument("--token-limit-per-sample", type=int, default=6000)
+    p.add_argument("--token-limit-per-sample", type=int, default=10_000)
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--log-dir", default="logs")
     return p.parse_args(argv)
