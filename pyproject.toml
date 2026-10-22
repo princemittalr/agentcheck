@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentcheck"
+version = "0.0.1"
+description = "Statistical regression testing for LLM agent evaluations built on Inspect."
+readme = "README.md"
+requires-python = ">=3.11"
+# Runtime dependencies (inspect_ai, numpy) are added in the milestone that first needs them.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "hypothesis>=6.100",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentcheck"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# E/F: pycodestyle + pyflakes, I: import order, B: likely bugs, UP: modern syntax,
+# SIM: simplifications, RUF: ruff-specific, PT: pytest style, BLE: no blind `except Exception`.
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "PT", "BLE"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+# Any warning is a test failure: silent problems are how agentlens went wrong.
+filterwarnings = ["error"]
