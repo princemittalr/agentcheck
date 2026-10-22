@@ -8,8 +8,11 @@ version = "0.0.1"
 description = "Statistical regression testing for LLM agent evaluations built on Inspect."
 readme = "README.md"
 requires-python = ">=3.11"
-# Runtime dependencies (inspect_ai, numpy) are added in the milestone that first needs them.
-dependencies = []
+# Runtime dependencies are added in the step that first needs them.
+# inspect_ai's API changes between releases: the upper bound makes upgrades deliberate.
+dependencies = [
+    "inspect-ai>=0.3.283,<0.4",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -17,6 +20,12 @@ dev = [
     "hypothesis>=6.100",
     "ruff>=0.6",
     "mypy>=1.11",
+]
+# Model provider for real runs. Not needed for tests, which use Inspect's mockllm.
+groq = [
+    "groq>=0.28",
+    # inspect_ai's groq provider imports shared helpers that depend on the openai SDK.
+    "openai>=3.4",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -41,4 +50,13 @@ warn_unreachable = true
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
 # Any warning is a test failure: silent problems are how agentlens went wrong.
-filterwarnings = ["error"]
+# Third-party exceptions are listed narrowly (exact message), each with a reason.
+filterwarnings = [
+    "error",
+    # inspect_ai 0.3.283 calls tenacity.wait_exponential_jitter(initial=...), deprecated
+    # in recent tenacity. Not our code; remove once inspect_ai updates.
+    "ignore:The 'initial' parameter is deprecated:DeprecationWarning",
+    # An anyio memory stream inside inspect_ai's eval loop is garbage-collected unclosed;
+    # pytest reports it as an unraisable exception. Not our code; revisit on upgrade.
+    "ignore:Exception ignored .*MemoryObjectReceiveStream:pytest.PytestUnraisableExceptionWarning",
+]

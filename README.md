@@ -16,6 +16,17 @@ or inconclusive**, and if inconclusive, roughly how many more runs are needed to
 agentcheck compare base.eval cand.eval
 ```
 
+## Running the task suite against a model
+
+Put `GROQ_API_KEY=...` in `.env` (git-ignored), then:
+
+```
+python -m agentcheck.run --model groq/openai/gpt-oss-20b --epochs 1 --max-calls 15 --max-tokens 30000
+```
+
+The runner prints the worst-case number of model calls and tokens first and refuses to
+start if either exceeds the caps.
+
 ## How it works (planned)
 
 1. Run a small agentic task suite in Inspect with several epochs per sample.
@@ -39,13 +50,14 @@ the conditions under which it fails.
 
 ## Limitations
 
-- Nothing is implemented yet; no results have been measured.
+- Only a 5-sample inventory lookup task exists so far; no statistics are implemented.
+- No results have been measured.
 
 ## Development
 
 ```
 python -m venv .venv
 .venv\Scripts\Activate.ps1        # Windows PowerShell
-pip install -e ".[dev]"
+pip install -e ".[dev,groq]"
 ruff check . ; ruff format --check . ; mypy ; pytest
 ```
