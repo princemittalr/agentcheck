@@ -8,6 +8,7 @@ from inspect_ai.model import ChatMessage, ModelOutput, ModelUsage, get_model
 from inspect_ai.tool import ToolChoice, ToolInfo
 
 from agentcheck.run import (
+    MAX_RETRIES,
     Budget,
     BudgetExceededError,
     check_budget,
@@ -29,7 +30,7 @@ def test_max_calls_per_sample(limit: int, expected: int) -> None:
 def test_budget_arithmetic() -> None:
     b = Budget(samples=5, epochs=2, calls_per_sample=3, token_limit_per_sample=100)
     assert b.max_model_calls == 30
-    assert b.max_http_requests == 120
+    assert b.max_http_requests == 30 * (1 + MAX_RETRIES)
     assert b.max_tokens == 1000
 
 

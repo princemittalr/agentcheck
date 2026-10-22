@@ -18,8 +18,12 @@ from inspect_ai.model import ChatMessageAssistant, Model
 from agentcheck.tasks.inventory import MESSAGE_LIMIT, build_dataset, inventory_lookup
 
 PROMPT_MESSAGES = 2  # system + user, present before the first model call
-MAX_RETRIES = 3  # HTTP retries per call (rate limits, 5xx); each retry is another request
-MAX_CONNECTIONS = 2  # concurrent requests; kept low for free-tier rate limits
+# Groq's free tier allows 8,000 tokens per minute for gpt-oss-20b. Requests are sent one
+# at a time, and a rate-limited request is retried with exponential backoff (about 3s,
+# 6s, 12s, ... with jitter). 8 retries can wait out several minutes, so the token
+# window always refills before a call gives up. Rejected requests use no tokens.
+MAX_RETRIES = 8
+MAX_CONNECTIONS = 1
 
 
 class BudgetExceededError(Exception):

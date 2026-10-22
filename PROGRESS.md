@@ -52,7 +52,8 @@ Last updated: 2026-10-22
 - **First model: `groq/openai/gpt-oss-20b`**: smallest tool-calling chat model on MNV's Groq key (model list checked 2026-10-22).
 - **Budget checked before sending**: worst-case calls = samples x epochs x ceil((message_limit - 2) / 2); the run is refused if that exceeds `--max-calls`. A test with an always-looping mock model hits the bound exactly.
 - **`--max-calls` and `--max-tokens` are required flags**: no run without an explicit budget.
-- **max_connections=2, max_retries=3**: stay inside free-tier rate limits; retries are counted in the printed HTTP-request bound.
+- **max_connections=1, max_retries=8** (was 2 and 3): the first 36-sample run hit Groq's free-tier limit of 8,000 tokens per minute and gave up after 3 short retries. Sending one request at a time with longer backoff waits the window out; retries are counted in the printed HTTP-request bound.
+- **A sample error fails the whole run (Inspect's default `fail_on_error`)**: silently dropping errored samples would bias pass rates, because the samples that error, the long multi-lookup ones, aren't random.
 
 ## Measured results
 
@@ -62,11 +63,13 @@ Every number here comes from a pasted run output.
 |---|---|---|---|---|---|---|
 | 2026-10-22 | inventory v1 (5 single-lookup samples) | groq/openai/gpt-oss-20b, seed 0 | 5 x 1 | 5/5 correct | 10 calls (bound 15), 2,553 tokens | $0 (free tier) |
 
+Attempt 2026-10-22, 36 x 1: stopped by a rate-limit error (TPM 8,000) after 10 of 36 samples, 28 calls, 9,848 tokens. No accuracy recorded from a partial run.
+
 Note: n = 5 is far too small for any conclusion; 5/5 also shows the ceiling effect that motivated the harder suite in step 3.
 
 ## Open questions
 
 - inspect_ai 0.3.283 emits a tenacity DeprecationWarning and an unclosed anyio stream warning in tests. Check after upgrades; possibly worth an upstream issue (M8 contact).
-- Groq free-tier rate limits for gpt-oss-20b: check https://console.groq.com/settings/limits before larger runs.
+- Groq free tier for gpt-oss-20b: 8,000 tokens/minute (from a 429 message). Requests and tokens per day still unknown; needed to size the 5-epoch run.
 - Inspect prints "Control server failed to start ... no attribute 'AF_UNIX'" on Windows. Harmless (optional feature), evals run normally.
 - License for the repo (MIT is a common default).
