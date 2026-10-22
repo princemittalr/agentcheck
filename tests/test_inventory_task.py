@@ -7,9 +7,11 @@ from pathlib import Path
 import pytest
 from inspect_ai import eval as inspect_eval
 from inspect_ai.log import EvalLog
-from inspect_ai.model import ChatMessageTool, ModelOutput, ModelUsage, get_model
+from inspect_ai.model import ChatMessage, ChatMessageTool, ModelOutput, ModelUsage, get_model
+from inspect_ai.model._model import ModelGenerateError  # private: only to simulate Groq's error
 from inspect_ai.tool import ToolError
 
+from agentcheck.run import count_model_output_errors
 from agentcheck.tasks.inventory import (
     CATALOG,
     build_dataset,
@@ -17,6 +19,7 @@ from agentcheck.tasks.inventory import (
     inventory_lookup,
     lookup_price,
     lookup_stock,
+    model_output_error_code,
     normalize,
 )
 
@@ -175,3 +178,69 @@ def test_unknown_sku_tool_error_then_unknown_scores_one(tmp_path: Path) -> None:
 def test_guessing_a_number_for_unknown_sku_scores_zero(tmp_path: Path) -> None:
     log = run_one_sample("unknown-SKU-1043", [reply("ANSWER: 37")], tmp_path)
     assert accuracy(log) == 0.0
+
+
+# --- model output errors (Groq "output_parse_failed") --------------------------------
+
+PARSE_FAILED = ModelGenerateError(
+    "Request: ...",
+    status_code=400,
+    provider_message="Error code: 400 - {'error': {'code': 'output_parse_failed'}}",
+)
+
+
+@pytest.mark.parametrize(
+    ("ex", "expected"),
+    [
+        (PARSE_FAILED, "output_parse_failed"),
+        (ModelGenerateError("x", status_code=429, provider_message="output_parse_failed"), None),
+        (ModelGenerateError("x", status_code=400, provider_message="context too long"), None),
+        (RuntimeError("output_parse_failed"), None),
+    ],
+)
+def test_model_output_error_code(ex: BaseException, expected: str | None) -> None:
+    assert model_output_error_code(ex) == expected
+
+
+def test_output_parse_failure_is_scored_wrong_not_crashed(tmp_path: Path) -> None:
+    calls = 0
+
+    def model(input: list[ChatMessage], *args: object) -> ModelOutput:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return tool_call("lookup_stock", "SKU-1042")
+        raise PARSE_FAILED
+
+    m = get_model(MOCK, custom_outputs=model)
+    [log] = inspect_eval(
+        inventory_lookup(),
+        model=m,
+        sample_id="single-SKU-1042",
+        log_dir=str(tmp_path),
+        display="none",
+    )
+    assert log.status == "success", log.error
+    assert accuracy(log) == 0.0
+    assert log.samples is not None
+    sample = log.samples[0]
+    assert sample.error is None
+    assert sample.metadata["model_output_error"] == "output_parse_failed"
+    assert sample.scores is not None
+    assert "output_parse_failed" in str(sample.scores["answer_line"].explanation)
+    assert count_model_output_errors(log) == 1
+
+
+def test_other_errors_still_fail_the_run(tmp_path: Path) -> None:
+    def model(*args: object) -> ModelOutput:
+        raise ModelGenerateError("x", status_code=401, provider_message="invalid_api_key")
+
+    m = get_model(MOCK, custom_outputs=model)
+    [log] = inspect_eval(
+        inventory_lookup(),
+        model=m,
+        sample_id="single-SKU-1042",
+        log_dir=str(tmp_path),
+        display="none",
+    )
+    assert log.status == "error"

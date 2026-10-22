@@ -76,6 +76,12 @@ def count_model_calls(log: EvalLog) -> int:
     return sum(isinstance(m, ChatMessageAssistant) for s in samples for m in s.messages)
 
 
+def count_model_output_errors(log: EvalLog) -> int:
+    """Samples ended by unusable model output (scored wrong, not dropped)."""
+    samples = log.samples or []
+    return sum("model_output_error" in (s.metadata or {}) for s in samples)
+
+
 def count_tokens(log: EvalLog) -> int:
     return sum(u.total_tokens for u in log.stats.model_usage.values())
 
@@ -139,6 +145,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"Status: {log.status}\n"
         f"  model calls: {count_model_calls(log)} (bound {budget.max_model_calls})\n"
         f"  tokens: {count_tokens(log)} (bound {budget.max_tokens})\n"
+        f"  model output errors (scored as wrong): {count_model_output_errors(log)}\n"
         f"  log: {Path(log.location)}"
     )
     if log.error is not None:

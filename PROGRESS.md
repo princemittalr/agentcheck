@@ -53,7 +53,8 @@ Last updated: 2026-10-22
 - **Budget checked before sending**: worst-case calls = samples x epochs x ceil((message_limit - 2) / 2); the run is refused if that exceeds `--max-calls`. A test with an always-looping mock model hits the bound exactly.
 - **`--max-calls` and `--max-tokens` are required flags**: no run without an explicit budget.
 - **max_connections=1, max_retries=8** (was 2 and 3): the first 36-sample run hit Groq's free-tier limit of 8,000 tokens per minute and gave up after 3 short retries. Sending one request at a time with longer backoff waits the window out; retries are counted in the printed HTTP-request bound.
-- **A sample error fails the whole run (Inspect's default `fail_on_error`)**: silently dropping errored samples would bias pass rates, because the samples that error, the long multi-lookup ones, aren't random.
+- **Infrastructure errors fail the whole run (Inspect's default `fail_on_error`)**: silently dropping errored samples would bias pass rates, because the samples that error, the long multi-lookup ones, aren't random.
+- **Model-output errors are scored as wrong answers** (Groq 400 `output_parse_failed`: the model emitted a tool call Groq couldn't parse). It's the agent stack failing, so dropping it would hide exactly the kind of regression we want to catch, and retrying would condition on success and inflate the pass rate. Counted and printed separately by the runner.
 
 ## Measured results
 
@@ -64,6 +65,7 @@ Every number here comes from a pasted run output.
 | 2026-10-22 | inventory v1 (5 single-lookup samples) | groq/openai/gpt-oss-20b, seed 0 | 5 x 1 | 5/5 correct | 10 calls (bound 15), 2,553 tokens | $0 (free tier) |
 
 Attempt 2026-10-22, 36 x 1: stopped by a rate-limit error (TPM 8,000) after 10 of 36 samples, 28 calls, 9,848 tokens. No accuracy recorded from a partial run.
+Attempt 2026-10-22, 36 x 1 (after the rate-limit fix): stopped by Groq 400 `output_parse_failed` after 14 of 36 samples, 38 calls, 13,688 tokens. No accuracy recorded.
 
 Note: n = 5 is far too small for any conclusion; 5/5 also shows the ceiling effect that motivated the harder suite in step 3.
 

@@ -16,8 +16,9 @@ from dataclasses import dataclass
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import MemoryDataset, Sample
+from inspect_ai.model import ModelOutput
 from inspect_ai.scorer import CORRECT, INCORRECT, Score, Scorer, Target, accuracy, scorer, stderr
-from inspect_ai.solver import TaskState, generate, system_message, use_tools
+from inspect_ai.solver import Generate, Solver, TaskState, solver, system_message, use_tools
 from inspect_ai.tool import Tool, ToolError, tool
 
 
@@ -188,9 +189,54 @@ def normalize(value: str) -> str:
     return v
 
 
+# Provider error codes meaning "the model produced output that could not be used".
+# These are the model's failures, so they are scored as wrong answers. Every other
+# error (rate limits, network, auth) is infrastructure and still fails the whole run.
+MODEL_OUTPUT_ERROR_CODES = ("output_parse_failed",)
+
+
+def model_output_error_code(ex: BaseException) -> str | None:
+    """The matching code if `ex` is a 400 caused by unusable model output, else None.
+
+    Inspect raises `ModelGenerateError` (a RuntimeError) carrying the provider's
+    `status_code` and `provider_message`; it isn't exported publicly, so we read
+    those two attributes rather than import a private class.
+    """
+    if getattr(ex, "status_code", None) != 400:
+        return None
+    message = str(getattr(ex, "provider_message", "") or "")
+    return next((code for code in MODEL_OUTPUT_ERROR_CODES if code in message), None)
+
+
+@solver
+def generate_scoring_output_errors() -> Solver:
+    """`generate()` with the tool loop, but a model-output error ends the sample as wrong."""
+
+    async def solve(state: TaskState, generate: Generate) -> TaskState:
+        try:
+            return await generate(state)
+        except RuntimeError as ex:
+            code = model_output_error_code(ex)
+            if code is None:
+                raise
+            state.metadata["model_output_error"] = code
+            state.output = ModelOutput.from_content(
+                model=str(state.model), content="", stop_reason="unknown", error=code
+            )
+            state.completed = True
+            return state
+
+    return solve
+
+
 @scorer(metrics=[accuracy(), stderr()])
 def answer_line() -> Scorer:
     async def score(state: TaskState, target: Target) -> Score:
+        error_code = state.metadata.get("model_output_error")
+        if error_code is not None:
+            return Score(
+                value=INCORRECT, answer=None, explanation=f"model output error: {error_code}"
+            )
         answer = extract_answer(state.output.completion)
         if answer is None:
             return Score(value=INCORRECT, answer=None, explanation="no ANSWER: line")
@@ -207,7 +253,7 @@ def inventory_lookup() -> Task:
         solver=[
             system_message(SYSTEM_PROMPT),
             use_tools(lookup_stock(), lookup_price()),
-            generate(),
+            generate_scoring_output_errors(),
         ],
         scorer=answer_line(),
         message_limit=MESSAGE_LIMIT,
