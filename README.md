@@ -7,14 +7,21 @@ AgentCheck is a statistical decision layer for LLM agent evaluations, built on
 for a baseline and a candidate agent, it answers one question: **regression, improvement,
 or inconclusive**, and if inconclusive, roughly how many more runs are needed to decide.
 
-> Status: early scaffold (milestone M0). Nothing below is implemented yet.
+> Status: statistics core and `compare` implemented (M3); calibration (M5) not yet run,
+> so the false-alarm and detection rates are not measured yet.
 > See [PROGRESS.md](PROGRESS.md) for current status and measured results.
 
-## Planned usage
+## Usage
 
 ```
 agentcheck compare base.eval cand.eval
 ```
+
+Prints the verdict (REGRESSION, IMPROVEMENT or INCONCLUSIVE), the pass-rate difference
+with its confidence interval and p-value, and a per-category table with
+Benjamini-Hochberg adjusted p-values. Exit code 1 on a regression, 0 otherwise, 2 on bad
+input (unfinished log, different tasks or samples). `agentcheck summary [log]` summarises
+one log.
 
 ## Running the task suite against a model
 
@@ -49,8 +56,18 @@ python -m agentcheck.run --resume logs/<interrupted>.eval --max-calls N --max-to
 
 ## Statistical assumptions
 
-To be filled in as each test is implemented. Every test will list its assumptions and
-the conditions under which it fails.
+- **Samples are independent units; epochs are not.** Epochs of one sample share its
+  difficulty, so they are averaged per sample and never resampled on their own.
+- **Pairing.** Baseline and candidate must run the same samples; anything else is refused.
+- **One epoch: exact McNemar** on discordant pairs. Exact, but discrete: with 5 or fewer
+  discordant samples no result can reach p < 0.05, so small changes are inconclusive.
+- **Several epochs: paired cluster bootstrap** (percentile interval, 10,000 resamples).
+  Approximate; can under-cover with few samples, which is why calibration (M5) matters.
+- **Per-category tests** are Benjamini-Hochberg adjusted (valid for independent or
+  positively dependent tests). With 6-8 samples per category they have little power; they
+  explain where a change happened and never change the verdict.
+- **Single pass rates** use the Wilson score interval.
+- A significant result is evidence of a change in this suite, not in general capability.
 
 ## How it's tested
 
@@ -62,8 +79,11 @@ the conditions under which it fails.
 
 ## Limitations
 
-- The task suite is 60 synthetic warehouse questions in 8 categories; no statistics are implemented yet.
-- No results have been measured.
+- The task suite is 60 synthetic warehouse questions in 8 categories.
+- False-alarm and detection rates are not measured yet (M5); until then the verdicts are
+  untested in the sense that matters.
+- No "how many more runs" estimate yet (M6).
+- Groq's free tier limits a model to about 125 sample-epochs a day on this suite.
 
 ## Development
 

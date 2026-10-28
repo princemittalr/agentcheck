@@ -9,7 +9,7 @@ Last updated: 2026-10-28
 | M0 | Repo scaffold: pyproject, ruff, mypy, pytest, CI, README, PROGRESS | Done (2026-10-22) |
 | M1 | Inspect task suite, 30+ samples, epochs >= 5 | In progress (step 5: 60 x 5 run resuming daily) |
 | M2 | Statistics core, verified against SciPy/statsmodels | Done (2026-10-28): Wilson, exact McNemar, cluster bootstrap, Benjamini-Hochberg; power/sequential in M6, kappa in M7 |
-| M3 | Log reader and `agentcheck compare` | Not started |
+| M3 | Log reader and `agentcheck compare` | In progress (step 1: compare CLI) |
 | M4 | Tool record/replay | Not started |
 | M5 | Calibration benchmark (A/A and injected regressions) | Not started |
 | M6 | Power analysis and sequential stopping | Not started |
@@ -34,6 +34,10 @@ Last updated: 2026-10-28
 - [x] Step 2: `paired_counts` + exact McNemar (stats/mcnemar.py), checked by hand and against SciPy `binomtest(b, b+c, 0.5)`
 - [x] Step 3: paired cluster bootstrap over samples for multi-epoch runs (stats/bootstrap.py), checked against SciPy's percentile bootstrap and normal theory
 - [x] Step 4: Benjamini-Hochberg adjusted p-values and rejections (stats/multiple.py), checked against SciPy `false_discovery_control`
+
+### M3 steps
+- [x] Step 1: `agentcheck compare` (verdict, CI, p-value, per-category BH table), `agentcheck` console script, bootstrap p-value; tested on mockllm logs (A/A inconclusive, 8 broken samples flagged as regression)
+- [ ] Step 2: first real comparison (qwen3.8-27b vs gpt-oss-20b on suite v3, 60 x 1)
 
 ## Key design decisions
 
@@ -89,6 +93,11 @@ Last updated: 2026-10-28
 - **Percentile bootstrap, 10,000 resamples, stdlib `random.Random(seed)`**: deterministic per seed, no NumPy at runtime. Percentile intervals can under-cover at small n; BCa is a possible upgrade if M5's calibration shows it.
 
 - **Benjamini-Hochberg (FDR), not Bonferroni (FWER), across categories**: per-category verdicts are screening signals, so controlling the share of false flags is the right target and keeps power; valid for independent or positively dependent tests. Adjusted values are clamped to at least the raw p, because floating point can otherwise put them a hair below it (found by Hypothesis).
+
+- **Verdict from one primary test; categories only explain**: McNemar for 1 epoch, cluster bootstrap otherwise. Per-category results never change the verdict, so splitting into categories cannot inflate false alarms on the headline.
+- **Pass rate = mean over samples of per-sample rates**: each sample weighs the same whatever its epoch count.
+- **Exit code 1 only for a regression**: inconclusive passes a CI gate; M6 adds "how many more runs".
+- **Bootstrap two-sided p-value = 2 x min(share of resampled means <= 0, share >= 0)**: consistent with the percentile interval, used for BH on multi-epoch runs.
 
 ## Measured results
 

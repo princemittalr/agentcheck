@@ -71,6 +71,7 @@ def test_identical_runs_give_a_zero_width_interval_at_zero() -> None:
     base, _ = make_runs(60, 5, 0.8, 0.8, seed=2)
     result = paired_bootstrap(base, base)
     assert (result.difference, result.low, result.high) == (0.0, 0.0, 0.0)
+    assert result.p_value == 1.0
 
 
 def test_interval_contains_estimate_and_detects_a_big_drop() -> None:
@@ -78,6 +79,18 @@ def test_interval_contains_estimate_and_detects_a_big_drop() -> None:
     result = paired_bootstrap(base, cand)
     assert result.low <= result.difference <= result.high
     assert result.high < 0
+    assert result.p_value < 0.01
+
+
+def test_p_value_agrees_with_the_interval() -> None:
+    """p < 0.05 exactly when the 95% interval excludes 0 (up to resampling granularity)."""
+    for seed in range(10):
+        base, cand = make_runs(40, 3, 0.8, 0.7, seed=100 + seed)
+        r = paired_bootstrap(base, cand)
+        if r.low > 0.005 or r.high < -0.005:
+            assert r.p_value < 0.05
+        if r.low < -0.005 and r.high > 0.005:
+            assert r.p_value > 0.05
 
 
 def test_agrees_with_scipy_percentile_bootstrap() -> None:

@@ -18,6 +18,7 @@ class BootstrapResult:
     high: float
     n_samples: int
     n_resamples: int
+    p_value: float  # two-sided, from the share of resampled means on each side of 0
 
 
 def per_sample_differences(
@@ -68,10 +69,13 @@ def paired_bootstrap(
     rng = random.Random(seed)
     means = sorted(fmean(rng.choices(diffs, k=n)) for _ in range(n_resamples))
     alpha = 1 - confidence
+    at_or_below = sum(m <= 0.0 for m in means) / n_resamples
+    at_or_above = sum(m >= 0.0 for m in means) / n_resamples
     return BootstrapResult(
         difference=fmean(diffs),
         low=quantile(means, alpha / 2),
         high=quantile(means, 1 - alpha / 2),
         n_samples=n,
         n_resamples=n_resamples,
+        p_value=min(1.0, 2 * min(at_or_below, at_or_above)),
     )

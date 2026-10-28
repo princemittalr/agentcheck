@@ -17,6 +17,9 @@ dependencies = [
 
 # Registers our tasks with Inspect so logs can be resumed (`eval_retry`). Inspect looks
 # tasks up by package name, so the entry point name must be "agentcheck".
+[project.scripts]
+agentcheck = "agentcheck.cli:main"
+
 [project.entry-points.inspect_ai]
 agentcheck = "agentcheck._registry"
 
