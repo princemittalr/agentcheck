@@ -8,7 +8,7 @@ Last updated: 2026-10-28
 |---|---|---|
 | M0 | Repo scaffold: pyproject, ruff, mypy, pytest, CI, README, PROGRESS | Done (2026-10-22) |
 | M1 | Inspect task suite, 30+ samples, epochs >= 5 | In progress (step 5: 60 x 5 run resuming daily) |
-| M2 | Statistics core, verified against SciPy/statsmodels | In progress (step 1 done: Wilson interval) |
+| M2 | Statistics core, verified against SciPy/statsmodels | In progress (steps 1-2 done: Wilson interval, exact McNemar) |
 | M3 | Log reader and `agentcheck compare` | Not started |
 | M4 | Tool record/replay | Not started |
 | M5 | Calibration benchmark (A/A and injected regressions) | Not started |
@@ -31,6 +31,7 @@ Last updated: 2026-10-28
 
 ### M2 steps (tests written first)
 - [x] Step 1: `wilson_interval` (stats/intervals.py) against Newcombe (1998) Table I, closed forms at k=0 and k=n, and SciPy `binomtest(...).proportion_ci(method="wilson")` on random inputs
+- [x] Step 2: `paired_counts` + exact McNemar (stats/mcnemar.py), checked by hand and against SciPy `binomtest(b, b+c, 0.5)`
 
 ## Key design decisions
 
@@ -78,6 +79,11 @@ Last updated: 2026-10-28
 - **Normal quantile from the stdlib (`statistics.NormalDist().inv_cdf`)**: no runtime dependency needed for z; matches SciPy's `norm.ppf` to about 1e-15.
 - **Wilson score interval, not Wald, for pass rates**: Wald collapses to zero width at 0/n and n/n and overshoots [0, 1] near the ceiling (58/60 gives an upper bound of 1.012). Wilson stays inside [0, 1] and has near-nominal coverage at small n.
 - **Exact bounds at the edges**: low is exactly 0.0 at k=0 and high exactly 1.0 at k=n, not a float rounding artefact such as -1e-17.
+
+- **Exact McNemar (binomial on discordant pairs), not the chi-square version**: our discordant counts are small (often under 25), where the chi-square approximation is poor. With 5 or fewer discordant pairs no result can reach p < 0.05.
+- **Two-sided p-value = min(1, 2 x lower tail)**: equals SciPy's method for p = 1/2 because the distribution is symmetric. Computed with exact integers, so no underflow or rounding at large n.
+- **Runs must cover exactly the same samples**: pairing on different sample sets would silently compare different questions; mismatches are refused.
+- **One outcome per sample for now**: with epochs, a sample's 5 results are clustered; how to reduce them per sample (or bootstrap over samples) is M2 step 3.
 
 ## Measured results
 
