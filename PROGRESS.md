@@ -8,7 +8,7 @@ Last updated: 2026-10-28
 |---|---|---|
 | M0 | Repo scaffold: pyproject, ruff, mypy, pytest, CI, README, PROGRESS | Done (2026-10-22) |
 | M1 | Inspect task suite, 30+ samples, epochs >= 5 | In progress (step 5: 60 x 5 run resuming daily) |
-| M2 | Statistics core, verified against SciPy/statsmodels | In progress (steps 1-3 done: Wilson, exact McNemar, cluster bootstrap) |
+| M2 | Statistics core, verified against SciPy/statsmodels | Done (2026-10-28): Wilson, exact McNemar, cluster bootstrap, Benjamini-Hochberg; power/sequential in M6, kappa in M7 |
 | M3 | Log reader and `agentcheck compare` | Not started |
 | M4 | Tool record/replay | Not started |
 | M5 | Calibration benchmark (A/A and injected regressions) | Not started |
@@ -33,7 +33,7 @@ Last updated: 2026-10-28
 - [x] Step 1: `wilson_interval` (stats/intervals.py) against Newcombe (1998) Table I, closed forms at k=0 and k=n, and SciPy `binomtest(...).proportion_ci(method="wilson")` on random inputs
 - [x] Step 2: `paired_counts` + exact McNemar (stats/mcnemar.py), checked by hand and against SciPy `binomtest(b, b+c, 0.5)`
 - [x] Step 3: paired cluster bootstrap over samples for multi-epoch runs (stats/bootstrap.py), checked against SciPy's percentile bootstrap and normal theory
-- [ ] Step 4: Benjamini-Hochberg across categories (closes M2; power and sequential tests are M6, kappa is M7)
+- [x] Step 4: Benjamini-Hochberg adjusted p-values and rejections (stats/multiple.py), checked against SciPy `false_discovery_control`
 
 ## Key design decisions
 
@@ -87,6 +87,8 @@ Last updated: 2026-10-28
 - **Runs must cover exactly the same samples**: pairing on different sample sets would silently compare different questions; mismatches are refused.
 - **Exact McNemar for single-epoch runs; paired cluster bootstrap for multi-epoch runs**: with epochs, each sample is reduced to (candidate rate - baseline rate) and the samples are resampled, never the epochs. A test proves 5 copied epochs give exactly the same interval as 1.
 - **Percentile bootstrap, 10,000 resamples, stdlib `random.Random(seed)`**: deterministic per seed, no NumPy at runtime. Percentile intervals can under-cover at small n; BCa is a possible upgrade if M5's calibration shows it.
+
+- **Benjamini-Hochberg (FDR), not Bonferroni (FWER), across categories**: per-category verdicts are screening signals, so controlling the share of false flags is the right target and keeps power; valid for independent or positively dependent tests. Adjusted values are clamped to at least the raw p, because floating point can otherwise put them a hair below it (found by Hypothesis).
 
 ## Measured results
 
