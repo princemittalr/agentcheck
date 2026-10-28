@@ -20,7 +20,7 @@ from statistics import fmean
 
 from inspect_ai.log import EvalLog
 
-from agentcheck.compare import Verdict, decide
+from agentcheck.compare import Verdict, sequential_decide
 from agentcheck.stats.intervals import Interval, wilson_interval
 from agentcheck.summary import per_sample
 
@@ -74,6 +74,9 @@ class Calibration:
     false_alarms: RateEstimate  # A/A runs with any non-inconclusive verdict
     drop: float
     detections: RateEstimate  # injected-drop runs with a REGRESSION verdict
+    looks: int = 1  # sequential looks per comparison (1 = fixed design)
+    mean_epochs_aa: float = 0.0  # epochs per sample actually used, A/A
+    mean_epochs_drop: float = 0.0  # epochs per sample actually used, injected drop
 
 
 def estimate(hits: int, reps: int) -> RateEstimate:
@@ -89,23 +92,33 @@ def calibrate(
     alpha: float = 0.05,
     n_resamples: int = 2000,
     seed: int = 0,
+    looks: int = 1,
 ) -> Calibration:
     check_pool(pool)
     if run_epochs < 1 or reps < 1:
         raise ValueError("run_epochs and reps must be >= 1")
+    if looks < 1 or run_epochs % looks:
+        raise ValueError(f"looks must divide run_epochs ({run_epochs}), got {looks}")
     base_rate = pool_rate(pool)
     if not 0.0 < drop <= base_rate:
         raise ValueError(f"drop must be in (0, pool pass rate {base_rate:.3f}], got {drop}")
     rng = random.Random(seed)
     false_alarms = detections = 0
+    used_aa = used_drop = 0
     for rep in range(reps):
         base, same = draw_run(pool, run_epochs, rng), draw_run(pool, run_epochs, rng)
-        v = decide(base, same, alpha=alpha, n_resamples=n_resamples, seed=rep)
+        v, used = sequential_decide(
+            base, same, looks=looks, alpha=alpha, n_resamples=n_resamples, seed=rep
+        )
         false_alarms += v is not Verdict.INCONCLUSIVE
+        used_aa += used
 
         worse = break_samples(draw_run(pool, run_epochs, rng), drop / base_rate, rng)
-        v = decide(base, worse, alpha=alpha, n_resamples=n_resamples, seed=rep)
+        v, used = sequential_decide(
+            base, worse, looks=looks, alpha=alpha, n_resamples=n_resamples, seed=rep
+        )
         detections += v is Verdict.REGRESSION
+        used_drop += used
     return Calibration(
         n_samples=len(pool),
         pool_epochs=min(len(v) for v in pool.values()),
@@ -116,6 +129,9 @@ def calibrate(
         false_alarms=estimate(false_alarms, reps),
         drop=drop,
         detections=estimate(detections, reps),
+        looks=looks,
+        mean_epochs_aa=used_aa / reps,
+        mean_epochs_drop=used_drop / reps,
     )
 
 
@@ -154,12 +170,16 @@ def render(c: Calibration, label: str) -> str:
             f"95% CI [{r.interval.low:.3f}, {r.interval.high:.3f}]   target {target}"
         )
 
-    return "\n".join(
-        [
-            f"Calibration: {label}",
-            f"  pool: {c.n_samples} samples x {c.pool_epochs}+ epochs, pass rate "
-            f"{c.pool_pass_rate:.3f}; simulated runs: {c.run_epochs} epoch(s); alpha {c.alpha}",
-            line("A/A false alarms", c.false_alarms, "<= 0.05"),
-            line(f"detect -{c.drop:.2f} drop", c.detections, ">= 0.80"),
-        ]
-    )
+    lines = [
+        f"Calibration: {label}",
+        f"  pool: {c.n_samples} samples x {c.pool_epochs}+ epochs, pass rate "
+        f"{c.pool_pass_rate:.3f}; simulated runs: {c.run_epochs} epoch(s); alpha {c.alpha}",
+        line("A/A false alarms", c.false_alarms, "<= 0.05"),
+        line(f"detect -{c.drop:.2f} drop", c.detections, ">= 0.80"),
+    ]
+    if c.looks > 1:
+        lines.append(
+            f"  sequential, {c.looks} looks: mean epochs used {c.mean_epochs_aa:.2f} (A/A), "
+            f"{c.mean_epochs_drop:.2f} (drop) of {c.run_epochs}"
+        )
+    return "\n".join(lines)

@@ -20,6 +20,7 @@ from agentcheck.stats.bootstrap import paired_bootstrap, per_sample_differences
 from agentcheck.stats.mcnemar import exact_mcnemar_p, paired_counts
 from agentcheck.stats.multiple import bh_adjust
 from agentcheck.stats.permutation import sign_flip_p
+from agentcheck.stats.sequential import look_alphas
 from agentcheck.summary import SampleRecord, per_sample
 
 
@@ -121,6 +122,38 @@ def decide(
     return Verdict.REGRESSION if diff < 0 else Verdict.IMPROVEMENT
 
 
+def sequential_decide(
+    base: Mapping[str, Sequence[bool]],
+    cand: Mapping[str, Sequence[bool]],
+    *,
+    looks: int,
+    alpha: float = 0.05,
+    n_resamples: int = 10_000,
+    seed: int = 0,
+) -> tuple[Verdict, int]:
+    """Look after each of `looks` equal batches of epochs; stop at the first verdict.
+
+    Returns the verdict and the epochs per sample used. Each look tests at its share of
+    alpha (O'Brien-Fleming-type spending), so false alarms stay <= alpha overall.
+    """
+    epochs = min(len(v) for v in (*base.values(), *cand.values()))
+    if epochs % looks:
+        raise ValueError(f"{epochs} epochs cannot be split into {looks} equal looks")
+    batch = epochs // looks
+    for k, look_alpha in enumerate(look_alphas(looks, alpha), start=1):
+        used = k * batch
+        verdict = decide(
+            {s: v[:used] for s, v in base.items()},
+            {s: v[:used] for s, v in cand.items()},
+            alpha=look_alpha,
+            n_resamples=n_resamples,
+            seed=seed,
+        )
+        if verdict is not Verdict.INCONCLUSIVE:
+            return verdict, used
+    return Verdict.INCONCLUSIVE, epochs
+
+
 def compare_records(
     base: Mapping[str, SampleRecord],
     cand: Mapping[str, SampleRecord],
@@ -160,20 +193,39 @@ def compare_records(
     return Comparison(verdict, overall, categories, alpha)
 
 
+def merged_records(logs: Sequence[EvalLog]) -> dict[str, SampleRecord]:
+    """Per-sample records with the epochs of several logs of one agent concatenated."""
+    if not logs:
+        raise ValueError("no logs")
+    merged = per_sample(logs[0])
+    for log in logs[1:]:
+        more = per_sample(log)
+        if more.keys() != merged.keys():
+            raise ValueError(f"{log.location} covers different samples from {logs[0].location}")
+        for k, rec in more.items():
+            merged[k].passes.extend(rec.passes)
+            merged[k].output_errors += rec.output_errors
+    return merged
+
+
 def compare_logs(
-    baseline: EvalLog,
-    candidate: EvalLog,
+    baseline: EvalLog | Sequence[EvalLog],
+    candidate: EvalLog | Sequence[EvalLog],
     *,
     alpha: float = 0.05,
     fdr: float = 0.05,
     n_resamples: int = 10_000,
     seed: int = 0,
 ) -> Comparison:
-    if baseline.eval.task != candidate.eval.task:
-        raise ValueError(f"different tasks: {baseline.eval.task!r} vs {candidate.eval.task!r}")
+    """Compare two agents; each side may be several logs, whose epochs are pooled."""
+    bases = [baseline] if isinstance(baseline, EvalLog) else list(baseline)
+    cands = [candidate] if isinstance(candidate, EvalLog) else list(candidate)
+    tasks = {log.eval.task for log in (*bases, *cands)}
+    if len(tasks) != 1:
+        raise ValueError(f"different tasks: {sorted(tasks)}")
     return compare_records(
-        per_sample(baseline),
-        per_sample(candidate),
+        merged_records(bases),
+        merged_records(cands),
         alpha=alpha,
         fdr=fdr,
         n_resamples=n_resamples,
@@ -183,7 +235,7 @@ def compare_logs(
 
 def render(c: Comparison, baseline: EvalLog, candidate: EvalLog) -> str:
     o = c.overall
-    conf = round((1 - c.alpha) * 100)
+    conf = f"{(1 - c.alpha) * 100:.4g}"
     lines = [
         f"Baseline:  {baseline.eval.model}  ({baseline.location})",
         f"Candidate: {candidate.eval.model}  ({candidate.location})",

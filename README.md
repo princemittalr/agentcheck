@@ -50,6 +50,19 @@ completed samples; the budget check applies to what is left:
 python -m agentcheck.run --resume logs/<interrupted>.eval --max-calls N --max-tokens N
 ```
 
+### Sequential comparisons (stop early)
+
+Plan K looks, run one batch of epochs per look, and compare after each batch:
+
+```
+agentcheck compare base1.eval cand1.eval --looks 3 --look 1
+agentcheck compare base1.eval cand1.eval --baseline-also base2.eval --candidate-also cand2.eval --looks 3 --look 2
+```
+
+Each look tests at its share of alpha (O'Brien-Fleming-type spending), so stopping at the
+first significant look keeps the overall false-alarm rate at alpha. Pooled logs on one
+side must cover the same samples.
+
 ### Calibration
 
 ```
@@ -104,6 +117,10 @@ changes between runs (a live API, a clock) is not mistaken for an agent regressi
   under exchangeability (A/A false alarms <= alpha at any sample count). The reported
   interval is a paired cluster bootstrap (percentile, 10,000 resamples), which can
   under-cover with few samples; it is descriptive and does not decide the verdict.
+- **Sequential looks** spend alpha with the Lan-DeMets O'Brien-Fleming function and test
+  each look at its increment; by the union bound this is valid for any correlation between
+  looks, at some cost in power versus exact group-sequential boundaries. Looks must be
+  planned in advance; adding unplanned looks breaks the guarantee.
 - **Per-category tests** are Benjamini-Hochberg adjusted (valid for independent or
   positively dependent tests). With 6-8 samples per category they have little power; they
   explain where a change happened and never change the verdict.

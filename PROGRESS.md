@@ -12,7 +12,7 @@ Last updated: 2026-10-28
 | M3 | Log reader and `agentcheck compare` | Done (2026-10-28): first real verdict recorded |
 | M4 | Tool record/replay | Done (2026-10-28, efcd2f3): cassette record/replay, runner `--tools/--cassette` |
 | M5 | Calibration benchmark (A/A and injected regressions) | In progress (synthetic calibration done; real pools pending) |
-| M6 | Power analysis and sequential stopping | In progress (step 1: power by simulation) |
+| M6 | Power analysis and sequential stopping | Done (2026-10-28): power grid, more-runs advice, sequential looks; synthetic sequential calibration pending |
 | M7 | LLM-judge calibration (kappa, position bias) | Not started |
 | M8 | GitHub Action and write-up | Not started |
 
@@ -53,7 +53,7 @@ Last updated: 2026-10-28
 - [x] Step 1: `agentcheck power` (detection over a samples x epochs grid, cheapest design whose 95% CI clears 80%); permutation test vectorised with NumPy (1981881)
 - [x] Step 2: "how many more epochs" advice in `compare` when inconclusive (simulated from the baseline log; needs >= 2 epochs)
 - [x] Step 2b: suite v4 (120 questions = v3 + 60 new on the same catalog), `--suite v4`; chosen by MNV 2026-10-28 after the power results
-- [ ] Step 3: sequential testing (stop early with alpha spending)
+- [x] Step 3: sequential testing: O'Brien-Fleming-type alpha spending (`--looks/--look`), pooled logs per side (`--baseline-also/--candidate-also`), `calibrate --looks` reports epochs saved
 
 ## Key design decisions
 
@@ -133,6 +133,9 @@ Last updated: 2026-10-28
 - **NumPy for the permutation sign matrix** (runtime dependency, already pulled in by inspect-ai): ~2.5 ms per 2,000-resample test at 480 samples versus ~0.5 s in pure Python. Exact-path results are unchanged; Monte Carlo p-values use a different random stream than commit 775a340, so recorded calibration numbers are tied to that commit.
 
 - **Suite v4 = v3 + 60 new questions, v3 untouched** (MNV's decision after the power grid): v3 logs stay comparable (tested: v4's first 60 equal v3 exactly), the catalog and tools are unchanged so cassettes still apply, and no v4 question repeats a v3 one (tested). Mix: single 6, value 4 (only 4 unused SKUs remain), total 10, most 10, reorder 8, portfolio 8, orders 8 (with exact-stock and stock+1 boundaries), unknown 6.
+
+- **Sequential = alpha spending + union bound, not exact group-sequential boundaries**: the exact boundaries need the joint distribution of the test statistics across looks, which the exact permutation/McNemar tests don't give in closed form; spending increments are valid for any dependence, and calibration measures the power cost.
+- **Looks are equal batches of epochs** (information fraction = epochs used / planned): the sample set stays fixed, so every look compares the same questions.
 
 ## Measured results
 

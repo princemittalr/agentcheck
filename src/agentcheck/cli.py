@@ -10,7 +10,8 @@ from collections.abc import Sequence
 from inspect_ai.log import EvalLog, read_eval_log
 
 from agentcheck import calibrate, power, summary
-from agentcheck.compare import Verdict, compare_logs, render
+from agentcheck.compare import Verdict, compare_logs, merged_records, render
+from agentcheck.stats.sequential import look_alphas
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -24,6 +25,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     c.add_argument("--fdr", type=float, default=0.05, help="per-category FDR (default 0.05)")
     c.add_argument("--resamples", type=int, default=10_000, help="bootstrap resamples")
     c.add_argument("--seed", type=int, default=0, help="bootstrap seed")
+    c.add_argument(
+        "--baseline-also", action="append", default=[], help="more baseline logs (epochs pooled)"
+    )
+    c.add_argument("--candidate-also", action="append", default=[], help="more candidate logs")
+    c.add_argument("--looks", type=int, default=1, help="planned sequential looks (default 1)")
+    c.add_argument("--look", type=int, default=1, help="which look this is (1..--looks)")
     c.add_argument(
         "--min-effect",
         type=float,
@@ -47,6 +54,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     k.add_argument("--alpha", type=float, default=0.05)
     k.add_argument("--resamples", type=int, default=2000, help="bootstrap resamples per test")
     k.add_argument("--seed", type=int, default=0)
+    k.add_argument("--looks", type=int, default=1, help="sequential looks (must divide --epochs)")
 
     w = sub.add_parser("power", help="detection rate over a grid of samples x epochs")
     w.add_argument("logs", nargs="*", help="pool: .eval logs of one agent (>= 2 epochs/sample)")
@@ -71,12 +79,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         forwarded = [args.log] if args.log else []
         return summary.main([*forwarded, "--log-dir", args.log_dir])
 
-    base, cand = read_eval_log(args.baseline), read_eval_log(args.candidate)
+    if not 1 <= args.look <= args.looks:
+        print(f"error: --look must be in 1..{args.looks}", file=sys.stderr)
+        return 2
+    bases = [read_eval_log(p) for p in [args.baseline, *args.baseline_also]]
+    cands = [read_eval_log(p) for p in [args.candidate, *args.candidate_also]]
+    base, cand = bases[0], cands[0]
+    look_alpha = look_alphas(args.looks, args.alpha)[args.look - 1]
     try:
         result = compare_logs(
-            base,
-            cand,
-            alpha=args.alpha,
+            bases,
+            cands,
+            alpha=look_alpha,
             fdr=args.fdr,
             n_resamples=args.resamples,
             seed=args.seed,
@@ -84,14 +98,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as ex:
         print(f"error: {ex}", file=sys.stderr)
         return 2
+    if args.looks > 1:
+        print(
+            f"Sequential look {args.look} of {args.looks}: tested at alpha {look_alpha:.4g} "
+            f"(O'Brien-Fleming spending of {args.alpha} overall)."
+        )
     print(render(result, base, cand))
     if result.verdict is Verdict.INCONCLUSIVE:
-        print(more_runs_advice(base, args.min_effect, args.seed))
+        if args.look < args.looks:
+            print(
+                f"Continue: run the next batch of epochs for both agents, then rerun with "
+                f"--look {args.look + 1} and every log so far (--baseline-also/--candidate-also)."
+            )
+        else:
+            print(more_runs_advice(bases, args.min_effect, args.seed))
     return 1 if result.verdict is Verdict.REGRESSION else 0
 
 
-def more_runs_advice(baseline: EvalLog, min_effect: float, seed: int) -> str:
-    records = summary.per_sample(baseline)
+def more_runs_advice(baselines: list[EvalLog], min_effect: float, seed: int) -> str:
+    records = merged_records(baselines)
     epochs = min(len(r.passes) for r in records.values())
     if epochs < 2:
         return (
@@ -149,6 +174,7 @@ def run_calibrate(args: argparse.Namespace) -> int:
             alpha=args.alpha,
             n_resamples=args.resamples,
             seed=args.seed,
+            looks=args.looks,
         )
     except ValueError as ex:
         print(f"error: {ex}", file=sys.stderr)

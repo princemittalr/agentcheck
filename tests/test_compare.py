@@ -180,3 +180,27 @@ def test_cli_inconclusive_with_epochs_gives_more_runs_advice(
     out = capsys.readouterr().out
     assert "VERDICT: INCONCLUSIVE" in out
     assert "More runs:" in out
+
+
+def test_cli_sequential_look_and_pooled_logs(
+    logs: tuple[EvalLog, EvalLog, EvalLog], capsys: pytest.CaptureFixture[str]
+) -> None:
+    base, same, worse = logs
+    args = ["compare", base.location, same.location, "--looks", "3", "--look", "1"]
+    assert main(args) == 0
+    out = capsys.readouterr().out
+    assert "Sequential look 1 of 3" in out
+    assert "Continue: run the next batch" in out
+    # Pooling two copies of each side: same verdict machinery, 2 epochs per sample.
+    args = ["compare", base.location, worse.location, "--baseline-also", same.location]
+    args += ["--candidate-also", worse.location]
+    assert main(args) == 1
+    assert "permutation, 60 samples" in capsys.readouterr().out
+
+
+def test_cli_look_out_of_range(
+    logs: tuple[EvalLog, EvalLog, EvalLog], capsys: pytest.CaptureFixture[str]
+) -> None:
+    base, same, _ = logs
+    assert main(["compare", base.location, same.location, "--looks", "2", "--look", "3"]) == 2
+    assert "--look must be in 1..2" in capsys.readouterr().err
