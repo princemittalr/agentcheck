@@ -85,6 +85,18 @@ and epoch count, and names the cheapest design whose 95% interval is entirely ab
 Larger suites are simulated by resampling the pool's samples, i.e. new questions as hard
 as the existing ones on average.
 
+### Judge calibration
+
+```
+agentcheck judge graded.eval --other second.eval --model groq/openai/gpt-oss-120b --max-calls N --max-tokens N
+```
+
+Asks a judge model whether each final reply in `graded.eval` matches the reference and
+reports Cohen's kappa against the deterministic scorer. With `--other`, it also shows the
+judge pairs of replies (one right, one wrong) in both orders and tests for position bias.
+The exact number of judge calls and a worst-case token bound are printed and checked
+against the caps before anything is sent.
+
 ### Recording and replaying tool calls
 
 ```

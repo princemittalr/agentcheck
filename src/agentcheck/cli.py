@@ -8,9 +8,11 @@ import sys
 from collections.abc import Sequence
 
 from inspect_ai.log import EvalLog, read_eval_log
+from inspect_ai.model import get_model
 
-from agentcheck import calibrate, power, summary
+from agentcheck import calibrate, judge, power, summary
 from agentcheck.compare import Verdict, compare_logs, merged_records, render
+from agentcheck.run import load_env
 from agentcheck.stats.sequential import look_alphas
 
 
@@ -70,7 +72,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     w.add_argument("--resamples", type=int, default=2000)
     w.add_argument("--seed", type=int, default=0)
 
+    j = sub.add_parser("judge", help="calibrate an LLM judge against the deterministic scorer")
+    j.add_argument("log", help=".eval log whose replies the judge grades")
+    j.add_argument("--other", help="a second log of the same samples, for the position test")
+    j.add_argument("--model", required=True, help="judge model, e.g. groq/openai/gpt-oss-20b")
+    j.add_argument("--max-calls", type=int, required=True, help="hard cap on judge calls")
+    j.add_argument("--max-tokens", type=int, required=True, help="hard cap on total tokens")
+
     args = p.parse_args(argv)
+    if args.command == "judge":
+        return run_judge(args)
     if args.command == "power":
         return run_power(args)
     if args.command == "calibrate":
@@ -141,6 +152,33 @@ def load_pool(args: argparse.Namespace, n_samples: int = 60) -> tuple[calibrate.
         return pool, f"synthetic (mean {args.mean}, spread {args.spread}, seed {args.seed})"
     logs = [read_eval_log(path) for path in args.logs]
     return calibrate.pool_from_logs(logs), f"{logs[0].eval.model}, {len(logs)} log(s)"
+
+
+def run_judge(args: argparse.Namespace) -> int:
+    log = read_eval_log(args.log)
+    other = read_eval_log(args.other) if args.other else None
+    try:
+        graded_items, pairs = judge.plan(log, other)
+    except ValueError as ex:
+        print(f"error: {ex}", file=sys.stderr)
+        return 2
+    calls = judge.calls_needed(len(graded_items), len(pairs))
+    tokens = judge.max_tokens_bound(graded_items, pairs)
+    print(
+        f"Plan: grade {len(graded_items)} replies + {len(pairs)} pairs x 2 orders on "
+        f"{args.model}\n  exactly {calls} judge calls; worst case {tokens} tokens"
+    )
+    if calls > args.max_calls or tokens > args.max_tokens:
+        print(
+            f"REFUSED: over the caps ({args.max_calls} calls, {args.max_tokens} tokens). "
+            "Nothing was sent.",
+            file=sys.stderr,
+        )
+        return 2
+    load_env()
+    report = judge.judge(get_model(args.model), graded_items, pairs)
+    print(judge.render(report, args.model))
+    return 0
 
 
 def run_power(args: argparse.Namespace) -> int:

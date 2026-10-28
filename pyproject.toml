@@ -33,6 +33,7 @@ dev = [
     "mypy>=1.11",
     # Reference implementations for tests only. The statistics core never imports SciPy.
     "scipy>=1.15",
+    "statsmodels>=0.14",
 ]
 # Model provider for real runs. Not needed for tests, which use Inspect's mockllm.
 groq = [
@@ -61,7 +62,7 @@ warn_unreachable = true
 
 [[tool.mypy.overrides]]
 # SciPy ships without complete type hints; it is only used in tests.
-module = ["scipy", "scipy.*"]
+module = ["scipy", "scipy.*", "statsmodels", "statsmodels.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

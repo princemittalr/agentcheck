@@ -12,8 +12,8 @@ Last updated: 2026-10-28
 | M3 | Log reader and `agentcheck compare` | Done (2026-10-28): first real verdict recorded |
 | M4 | Tool record/replay | Done (2026-10-28, efcd2f3): cassette record/replay, runner `--tools/--cassette` |
 | M5 | Calibration benchmark (A/A and injected regressions) | In progress (synthetic calibration done; real pools pending) |
-| M6 | Power analysis and sequential stopping | Done (2026-10-28): power grid, more-runs advice, sequential looks; synthetic sequential calibration pending |
-| M7 | LLM-judge calibration (kappa, position bias) | Not started |
+| M6 | Power analysis and sequential stopping | Done (2026-10-28, 49e89cc): power grid, more-runs advice, sequential looks |
+| M7 | LLM-judge calibration (kappa, position bias) | In progress (step 1: kappa, position test, `agentcheck judge`) |
 | M8 | GitHub Action and write-up | Not started |
 
 ### M0 steps
@@ -54,6 +54,10 @@ Last updated: 2026-10-28
 - [x] Step 2: "how many more epochs" advice in `compare` when inconclusive (simulated from the baseline log; needs >= 2 epochs)
 - [x] Step 2b: suite v4 (120 questions = v3 + 60 new on the same catalog), `--suite v4`; chosen by MNV 2026-10-28 after the power results
 - [x] Step 3: sequential testing: O'Brien-Fleming-type alpha spending (`--looks/--look`), pooled logs per side (`--baseline-also/--candidate-also`), `calibrate --looks` reports epochs saved
+
+### M7 steps
+- [x] Step 1: Cohen's kappa with Fleiss-Cohen-Everitt SE (checked against statsmodels), exact position-bias test, `agentcheck judge` (grades a log's replies against the deterministic scorer; pairwise position test against a second log; exact call count and token bound before sending)
+- [ ] Step 2: real judge run (gpt-oss-120b judging gpt-oss-20b's v3 replies, position test against qwen's)
 
 ## Key design decisions
 
@@ -137,6 +141,10 @@ Last updated: 2026-10-28
 - **Sequential = alpha spending + union bound, not exact group-sequential boundaries**: the exact boundaries need the joint distribution of the test statistics across looks, which the exact permutation/McNemar tests don't give in closed form; spending increments are valid for any dependence, and calibration measures the power cost.
 - **Looks are equal batches of epochs** (information fraction = epochs used / planned): the sample set stays fixed, so every look compares the same questions.
 
+- **Judge reference = the deterministic ANSWER-line scorer**: on this suite the truth is known, so the judge's agreement can be measured rather than assumed. Kappa, not raw accuracy, because a lenient judge on a mostly-correct log agrees often by chance (tested: "always CORRECT" gets kappa 0).
+- **Position test only on informative pairs** (exactly one of the two replies correct), asked in both orders; first-position-wins-both vs second-position-wins-both is an exact sign test (McNemar).
+- **Judge at temperature 0, 1,024 output tokens**: reasoning models spend tokens before the one-word verdict; unparseable verdicts are counted and excluded from kappa, never guessed.
+
 ## Measured results
 
 Every number here comes from a pasted run output.
@@ -209,6 +217,18 @@ Cheapest design whose 95% CI clears 80%: 120 x 1 (0.95 pool, 0.880 [0.838, 0.912
 a regression that breaks whole questions is only visible across questions; more epochs
 mostly remove within-question noise. Consequence: the suite should grow to about 120
 samples for the 10-point target.
+
+### Sequential looks, synthetic pool (2026-10-28, commit 49e89cc, 120 samples, mean 0.8, spread 4, 5 epochs, 1,000 reps)
+
+| Design | A/A false alarms (95% CI) | Detect -0.10 (95% CI) | Mean epochs used (A/A, drop) |
+|---|---|---|---|
+| fixed, 1 look | 52/1000 = 0.052 [0.040, 0.068] | 912/1000 = 0.912 [0.893, 0.928] | 5, 5 |
+| sequential, 5 looks | 38/1000 = 0.038 [0.028, 0.052] | 856/1000 = 0.856 [0.833, 0.876] | 4.97, 3.42 |
+
+Sequential looks cut the epochs spent on a real 10-point drop by about 32% (3.42 of 5)
+for a 5.6-point loss in detection, and stay at or below the false-alarm target. The fixed
+design's 0.052 is consistent with the nominal 5% (its CI contains 0.05): the permutation
+test is exact, not conservative, so about 5% is what it should show.
 
 Findings: (1) exact McNemar keeps false alarms well under 5% but detects a 10-point drop
 only 16-48% of the time from one epoch of 60 samples; (2) the percentile bootstrap is
