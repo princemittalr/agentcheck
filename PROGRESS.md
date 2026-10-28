@@ -11,8 +11,8 @@ Last updated: 2026-10-28
 | M2 | Statistics core, verified against SciPy/statsmodels | Done (2026-10-28): Wilson, exact McNemar, cluster bootstrap, Benjamini-Hochberg; power/sequential in M6, kappa in M7 |
 | M3 | Log reader and `agentcheck compare` | Done (2026-10-28): first real verdict recorded |
 | M4 | Tool record/replay | Done (2026-10-28, efcd2f3): cassette record/replay, runner `--tools/--cassette` |
-| M5 | Calibration benchmark (A/A and injected regressions) | In progress (step 2: synthetic results; bootstrap verdict replaced by permutation test) |
-| M6 | Power analysis and sequential stopping | Not started |
+| M5 | Calibration benchmark (A/A and injected regressions) | In progress (synthetic calibration done; real pools pending) |
+| M6 | Power analysis and sequential stopping | In progress (step 1: power by simulation) |
 | M7 | LLM-judge calibration (kappa, position bias) | Not started |
 | M8 | GitHub Action and write-up | Not started |
 
@@ -45,9 +45,13 @@ Last updated: 2026-10-28
 ### M5 steps
 - [x] Step 1: `agentcheck calibrate` (pool resampling, A/A false alarms, injected sample-level drop, Wilson CIs), synthetic Beta pools, `decide()` fast path proven equal to `compare_records`
 - [x] Step 2a: synthetic results with the bootstrap verdict (below): multi-epoch A/A false alarms 0.054 and 0.060, over target
-- [ ] Step 2b: rerun with the sign-flip permutation verdict
+- [x] Step 2b: rerun with the sign-flip permutation verdict (775a340): all A/A false-alarm rates <= 0.05; detection 0.55-0.72 at 5 epochs, below the 0.80 target
 - [ ] Step 3: real pool: qwen3.8-27b 60 x 5 (when the daily-resumed run completes)
 - [ ] Step 4: real pool: gpt-oss-20b 60 x 5 (noisy regime)
+
+### M6 steps
+- [x] Step 1: `agentcheck power` (detection over a samples x epochs grid, cheapest design whose 95% CI clears 80%); permutation test vectorised with NumPy
+- [ ] Step 2: "how many more epochs" in `compare` output, and sequential testing (stop early with alpha spending)
 
 ## Key design decisions
 
@@ -122,6 +126,10 @@ Last updated: 2026-10-28
 
 - **Multi-epoch verdict = paired sign-flip permutation test, not the bootstrap p-value** (changed after step 2a): under A/A the runs are exchangeable, so flipping signs of per-sample differences gives the exact null distribution and false alarms <= alpha at any n. Exact enumeration up to 16 non-zero differences, else Monte Carlo with the +1 correction (Phipson & Smyth 2010). On {-1, 0, +1} differences it equals exact McNemar (tested). The bootstrap still provides the reported interval.
 
+- **Power by simulation, not a closed formula**: injected regressions break whole samples, so the effect is concentrated and the realised drop varies run to run; normal-approximation formulas assume an evenly spread effect and overstate power at 60 samples. Bigger suites are simulated by resampling the pool's samples.
+- **"Cheapest design" requires the whole 95% interval of the detection rate to clear the target**, not just the point estimate.
+- **NumPy for the permutation sign matrix** (runtime dependency, already pulled in by inspect-ai): ~2.5 ms per 2,000-resample test at 480 samples versus ~0.5 s in pure Python. Exact-path results are unchanged; Monte Carlo p-values use a different random stream than commit 775a340, so recorded calibration numbers are tied to that commit.
+
 ## Measured results
 
 Every number here comes from a pasted run output.
@@ -157,6 +165,18 @@ Verdict for multi-epoch runs = **percentile bootstrap p-value** (superseded, see
 | 0.8, 4 | 0.800 | 5 (bootstrap) | **54/1000 = 0.054** [0.042, 0.070] | 666/1000 = 0.666 [0.636, 0.695] |
 | 0.6, 4 | 0.563 | 1 (McNemar) | 29/1000 = 0.029 [0.020, 0.041] | 161/1000 = 0.161 [0.140, 0.185] |
 | 0.6, 4 | 0.563 | 5 (bootstrap) | **60/1000 = 0.060** [0.047, 0.076] | 620/1000 = 0.620 [0.590, 0.650] |
+
+Verdict for multi-epoch runs = **sign-flip permutation test** (current, commit 775a340); 1-epoch rows unchanged:
+
+| Pool (Beta mean, spread) | Pool pass rate | Epochs/run | A/A false alarms (95% CI) | Detect -0.10 (95% CI) |
+|---|---|---|---|---|
+| 0.95, 1 | 0.963 | 5 (permutation) | 0/1000 = 0.000 [0.000, 0.004] | 723/1000 = 0.723 [0.694, 0.750] |
+| 0.8, 4 | 0.800 | 5 (permutation) | 36/1000 = 0.036 [0.026, 0.049] | 586/1000 = 0.586 [0.555, 0.616] |
+| 0.6, 4 | 0.563 | 5 (permutation) | 41/1000 = 0.041 [0.030, 0.055] | 552/1000 = 0.552 [0.521, 0.583] |
+
+Status against the acceptance targets (synthetic pools): false alarms <= 5% is **met** in
+all 6 settings. Detection >= 80% of a 10-point drop is **not met** with 60 samples at 1
+or 5 epochs (best 0.723). M6 measures what sample count and epoch count reach it.
 
 Findings: (1) exact McNemar keeps false alarms well under 5% but detects a 10-point drop
 only 16-48% of the time from one epoch of 60 samples; (2) the percentile bootstrap is

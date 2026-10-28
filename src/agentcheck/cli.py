@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 from inspect_ai.log import read_eval_log
 
-from agentcheck import calibrate, summary
+from agentcheck import calibrate, power, summary
 from agentcheck.compare import Verdict, compare_logs, render
 
 
@@ -42,7 +42,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     k.add_argument("--resamples", type=int, default=2000, help="bootstrap resamples per test")
     k.add_argument("--seed", type=int, default=0)
 
+    w = sub.add_parser("power", help="detection rate over a grid of samples x epochs")
+    w.add_argument("logs", nargs="*", help="pool: .eval logs of one agent (>= 2 epochs/sample)")
+    w.add_argument("--synthetic", action="store_true", help="use a synthetic pool instead")
+    w.add_argument("--mean", type=float, default=0.8)
+    w.add_argument("--spread", type=float, default=4.0)
+    w.add_argument("--samples", default="60,120,240", help="comma-separated sample counts")
+    w.add_argument("--epochs", default="1,3,5,10", help="comma-separated epoch counts")
+    w.add_argument("--drop", type=float, default=0.10)
+    w.add_argument("--target", type=float, default=0.80)
+    w.add_argument("--reps", type=int, default=300)
+    w.add_argument("--alpha", type=float, default=0.05)
+    w.add_argument("--resamples", type=int, default=2000)
+    w.add_argument("--seed", type=int, default=0)
+
     args = p.parse_args(argv)
+    if args.command == "power":
+        return run_power(args)
     if args.command == "calibrate":
         return run_calibrate(args)
     if args.command == "summary":
@@ -66,20 +82,41 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 1 if result.verdict is Verdict.REGRESSION else 0
 
 
-def run_calibrate(args: argparse.Namespace) -> int:
+def load_pool(args: argparse.Namespace, n_samples: int = 60) -> tuple[calibrate.Run, str]:
     if args.synthetic == bool(args.logs):
-        print("error: give pool logs or --synthetic, not both or neither", file=sys.stderr)
-        return 2
+        raise ValueError("give pool logs or --synthetic, not both or neither")
+    if args.synthetic:
+        pool = calibrate.synthetic_pool(
+            n_samples=n_samples, mean=args.mean, spread=args.spread, seed=args.seed
+        )
+        return pool, f"synthetic (mean {args.mean}, spread {args.spread}, seed {args.seed})"
+    logs = [read_eval_log(path) for path in args.logs]
+    return calibrate.pool_from_logs(logs), f"{logs[0].eval.model}, {len(logs)} log(s)"
+
+
+def run_power(args: argparse.Namespace) -> int:
     try:
-        if args.synthetic:
-            pool = calibrate.synthetic_pool(
-                n_samples=args.samples, mean=args.mean, spread=args.spread, seed=args.seed
-            )
-            label = f"synthetic (mean {args.mean}, spread {args.spread}, seed {args.seed})"
-        else:
-            logs = [read_eval_log(path) for path in args.logs]
-            pool = calibrate.pool_from_logs(logs)
-            label = f"{logs[0].eval.model}, {len(logs)} log(s)"
+        pool, label = load_pool(args)
+        cells = power.power_grid(
+            pool,
+            [int(x) for x in args.samples.split(",")],
+            [int(x) for x in args.epochs.split(",")],
+            drop=args.drop,
+            reps=args.reps,
+            alpha=args.alpha,
+            n_resamples=args.resamples,
+            seed=args.seed,
+        )
+    except ValueError as ex:
+        print(f"error: {ex}", file=sys.stderr)
+        return 2
+    print(power.render(cells, args.drop, label, args.target))
+    return 0
+
+
+def run_calibrate(args: argparse.Namespace) -> int:
+    try:
+        pool, label = load_pool(args, args.samples)
         result = calibrate.calibrate(
             pool,
             run_epochs=args.epochs,

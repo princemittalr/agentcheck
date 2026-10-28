@@ -57,6 +57,17 @@ Simulates many baseline/candidate pairs by resampling a pool of logged epochs (s
 stay the unit). Reports the A/A false-alarm rate and the detection rate for an injected
 pass-rate drop (default 10 points), each with a 95% Wilson interval.
 
+### Power: how many samples and epochs
+
+```
+agentcheck power logs\a.eval --samples 60,120,240 --epochs 1,3,5,10
+```
+
+Simulates the detection rate of an injected drop (default 10 points) for each suite size
+and epoch count, and names the cheapest design whose 95% interval is entirely above 80%.
+Larger suites are simulated by resampling the pool's samples, i.e. new questions as hard
+as the existing ones on average.
+
 ### Recording and replaying tool calls
 
 ```
@@ -110,7 +121,7 @@ changes between runs (a live API, a clock) is not mistaken for an agent regressi
 - The task suite is 60 synthetic warehouse questions in 8 categories.
 - False-alarm and detection rates are not measured yet (M5); until then the verdicts are
   untested in the sense that matters.
-- No "how many more runs" estimate yet (M6).
+- `compare` does not yet print "how many more runs" itself; `agentcheck power` answers it by simulation (M6).
 - Record/replay covers tools with scalar results (text, numbers, booleans) keyed on exact
   arguments. An agent that calls a tool with arguments never recorded fails in replay mode;
   re-record when the suite or the tools change.
