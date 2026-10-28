@@ -12,17 +12,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from inspect_ai import eval as inspect_eval
-from inspect_ai.log import EvalLog
+from inspect_ai import eval_retry
+from inspect_ai.log import EvalLog, read_eval_log
 from inspect_ai.model import ChatMessageAssistant, Model
 
 from agentcheck.tasks.inventory import MESSAGE_LIMIT, build_dataset, inventory_lookup
 
 PROMPT_MESSAGES = 2  # system + user, present before the first model call
-# Groq's free tier allows 8,000 tokens per minute for gpt-oss-20b. Requests are sent one
-# at a time, and a rate-limited request is retried with exponential backoff (about 3s,
-# 6s, 12s, ... with jitter). 8 retries can wait out several minutes, so the token
-# window always refills before a call gives up. Rejected requests use no tokens.
-MAX_RETRIES = 8
+# Groq's free tier limits tokens per minute (gpt-oss-20b: 8,000 total; qwen3.8-27b: 1,000
+# output). Requests go one at a time, and a rate-limited request is retried. 8 retries
+# ran out on qwen's output limit, so 40: rejected requests use no tokens, and a
+# per-minute window always clears well within 40 attempts.
+MAX_RETRIES = 40
 MAX_CONNECTIONS = 1
 
 
@@ -107,9 +108,19 @@ def run_capped(
     return log
 
 
+def remaining_samples(log: EvalLog) -> int:
+    """Sample-epochs a resumed run still has to do (finished, error-free ones are kept)."""
+    total = len(build_dataset()) if log.eval.dataset.samples is None else log.eval.dataset.samples
+    if log.eval.config.limit is not None and isinstance(log.eval.config.limit, int):
+        total = min(total, log.eval.config.limit)
+    done = sum(s.error is None for s in log.samples or [])
+    return total * (log.eval.config.epochs or 1) - done
+
+
 def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--model", required=True, help="e.g. groq/openai/gpt-oss-20b")
+    p.add_argument("--model", help="e.g. groq/qwen/qwen3.8-27b (not used with --resume)")
+    p.add_argument("--resume", help="an interrupted .eval log to finish")
     p.add_argument("--epochs", type=int, default=1)
     p.add_argument("--limit", type=int, default=None, help="first N samples only")
     p.add_argument("--max-calls", type=int, required=True, help="hard cap on model calls")
@@ -120,8 +131,53 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def report(log: EvalLog, budget: Budget) -> int:
+    print(
+        f"Status: {log.status}\n"
+        f"  model calls: {count_model_calls(log)} (bound {budget.max_model_calls})\n"
+        f"  tokens: {count_tokens(log)} (bound {budget.max_tokens})\n"
+        f"  model output errors (scored as wrong): {count_model_output_errors(log)}\n"
+        f"  log: {Path(log.location)}"
+    )
+    if log.error is not None:
+        print(f"Error: {log.error.message}", file=sys.stderr)
+    return 0 if log.status == "success" else 1
+
+
+def resume(args: argparse.Namespace) -> int:
+    old = read_eval_log(args.resume)
+    budget = Budget(
+        samples=remaining_samples(old),
+        epochs=1,
+        calls_per_sample=max_calls_per_sample(MESSAGE_LIMIT),
+        token_limit_per_sample=args.token_limit_per_sample,
+    )
+    print(
+        f"Resume: {budget.samples} sample-epochs left in {args.resume}\n"
+        f"  worst case: {budget.max_model_calls} model calls, {budget.max_tokens} tokens"
+    )
+    try:
+        check_budget(budget, args.max_calls, args.max_tokens)
+    except BudgetExceededError as e:
+        print(f"REFUSED: {e}. Nothing was sent.", file=sys.stderr)
+        return 2
+    [log] = eval_retry(
+        old,
+        log_dir=args.log_dir,
+        max_retries=MAX_RETRIES,
+        max_connections=MAX_CONNECTIONS,
+    )
+    # Bounds in the report are for the resumed part; counts cover the whole log.
+    return report(log, budget)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.resume:
+        return resume(args)
+    if not args.model:
+        print("REFUSED: --model is required unless --resume is given.", file=sys.stderr)
+        return 2
     n_samples = len(build_dataset())
     budget = Budget(
         samples=min(args.limit, n_samples) if args.limit else n_samples,
@@ -146,16 +202,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     log = run_capped(args.model, budget, log_dir=args.log_dir, seed=args.seed)
-    print(
-        f"Status: {log.status}\n"
-        f"  model calls: {count_model_calls(log)} (bound {budget.max_model_calls})\n"
-        f"  tokens: {count_tokens(log)} (bound {budget.max_tokens})\n"
-        f"  model output errors (scored as wrong): {count_model_output_errors(log)}\n"
-        f"  log: {Path(log.location)}"
-    )
-    if log.error is not None:
-        print(f"Error: {log.error.message}", file=sys.stderr)
-    return 0 if log.status == "success" else 1
+    return report(log, budget)
 
 
 if __name__ == "__main__":

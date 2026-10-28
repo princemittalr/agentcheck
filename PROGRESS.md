@@ -53,6 +53,9 @@ Last updated: 2026-10-22
 - **Keep qwen3.8-27b primary despite 0.967 on v3**: rather than escalating task difficulty indefinitely (more tokens per run on a free tier), M5 will calibrate in two regimes: qwen (high pass rate, few flaky samples) and gpt-oss-20b (about 0.6, many flaky samples). Revisit if the 5-epoch run shows no flaky samples at all.
 - **Epochs are repeated attempts on the same sample, not new samples**: 60 x 5 = 300 trials but only 60 independent units; the statistics must treat epochs as clustered within samples (M2/M3).
 - **`agentcheck.summary` is descriptive only**: counts, rates, flaky and always-failing samples; no inference, so it isn't part of the statistics core.
+- **Tasks registered via an `inspect_ai` entry point (`agentcheck._registry`)**: Inspect can only resume (`eval_retry`) tasks it can find by package name.
+- **`--resume LOG` in the runner, with the same budget check**: resuming keeps finished samples instead of paying for them twice; the bound is computed for the remaining sample-epochs.
+- **max_retries 8 -> 40**: qwen3.8-27b's free-tier limit is 1,000 output tokens per minute and 8 retries ran out; rejected requests cost nothing.
 - **`--seed` refused with `--epochs > 1`**: the same seed goes to every epoch, which could replay identical outputs and hide the run-to-run variance we're measuring.
 - **Fictional tool data**: the model can only answer by calling the tool, so the task measures tool use, not memorised facts.
 - **`ToolError` for bad tool input, nothing else caught**: the model sees a recoverable error; real bugs still fail the sample loudly.
@@ -81,6 +84,8 @@ Attempt 2026-10-22, 36 x 1 (after the rate-limit fix): stopped by Groq 400 `outp
 | 2026-10-22 | inventory v2 (36 samples) | groq/openai/gpt-oss-120b, seed 0 | 36 x 1 | 35/36 (0.972); 0 output errors | 111 calls (bound 252), 45,414 tokens | $0 |
 
 | 2026-10-22 | inventory v3 (60 samples) | groq/qwen/qwen3.8-27b, seed 0 | 60 x 1 | 58/60 (0.967); 0 output errors | 120 calls (bound 660), 93,630 tokens, 16.5 min | $0 |
+
+Attempt 2026-10-28, v3 60 x 5 on qwen3.8-27b (no seed): stopped by the 1,000 output-tokens-per-minute limit after 93 of 300 sample-epochs, 187 calls, 142,553 tokens. Resumed with `--resume` (result below once complete).
 
 Note: single runs, no intervals yet (Wilson intervals arrive in M2). n = 5 is far too small for any conclusion; 5/5 also shows the ceiling effect that motivated the harder suite in step 3.
 

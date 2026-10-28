@@ -32,6 +32,13 @@ samples that pass in some epochs but not others listed:
 python -m agentcheck.summary
 ```
 
+If a run is interrupted (for example by a rate limit), finish it without redoing the
+completed samples; the budget check applies to what is left:
+
+```
+python -m agentcheck.run --resume logs/<interrupted>.eval --max-calls N --max-tokens N
+```
+
 ## How it works (planned)
 
 1. Run a small agentic task suite in Inspect with several epochs per sample.

@@ -1,10 +1,14 @@
 """Tests for the capped runner. All offline: mockllm only."""
 
 from collections.abc import Sequence
+from importlib.metadata import entry_points
 from pathlib import Path
 
 import pytest
+from inspect_ai import eval as inspect_eval
 from inspect_ai.model import ChatMessage, ModelOutput, ModelUsage, get_model
+from inspect_ai.model._model import ModelGenerateError  # private: only to simulate API errors
+from inspect_ai.model._providers.mockllm import MockLLM  # private: see test_resume_*
 from inspect_ai.tool import ToolChoice, ToolInfo
 
 from agentcheck.run import (
@@ -15,9 +19,10 @@ from agentcheck.run import (
     count_model_calls,
     main,
     max_calls_per_sample,
+    remaining_samples,
     run_capped,
 )
-from agentcheck.tasks.inventory import MESSAGE_LIMIT
+from agentcheck.tasks.inventory import MESSAGE_LIMIT, inventory_lookup
 
 MOCK = "mockllm/model"
 
@@ -87,3 +92,64 @@ def test_cli_refuses_fixed_seed_with_multiple_epochs(
     assert code == 2
     assert "--seed" in capsys.readouterr().err
     assert not log_dir.exists()
+
+
+# --- resuming an interrupted run -----------------------------------------------------
+
+
+def test_tasks_are_registered_for_inspect() -> None:
+    eps = [ep for ep in entry_points(group="inspect_ai") if ep.name == "agentcheck"]
+    assert [ep.value for ep in eps] == ["agentcheck._registry"]
+
+
+def test_resume_finishes_an_interrupted_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The resumed run rebuilds "mockllm/model" from the log, so it answers with
+    # mockllm's default text. Skip mockllm's token counting, which would download a
+    # tiktoken encoding, to keep this test offline.
+    async def no_usage(*args: object) -> None:
+        return None
+
+    monkeypatch.setattr(MockLLM, "_ensure_default_usage", no_usage)
+
+    def fail_on_zero_stock(input: Sequence[ChatMessage], *args: object) -> ModelOutput:
+        if "SKU-2177" in str(input):
+            raise ModelGenerateError("x", status_code=503, provider_message="service unavailable")
+        out = ModelOutput.from_content(MOCK, "ANSWER: 37")
+        out.usage = ModelUsage(input_tokens=0, output_tokens=0, total_tokens=0)
+        return out
+
+    [first] = inspect_eval(
+        inventory_lookup(),
+        model=get_model(MOCK, custom_outputs=fail_on_zero_stock),
+        sample_id=["single-SKU-1042", "single-SKU-2177"],
+        max_retries=0,
+        log_dir=str(tmp_path),
+        display="none",
+    )
+    assert first.status == "error"
+    assert remaining_samples(first) >= 1
+
+    budget = ["--max-calls", "1000", "--max-tokens", "10000000"]
+    code = main(["--resume", first.location, *budget, "--log-dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "Status: success" in out
+
+
+def test_resume_respects_the_budget(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def always_fail(*args: object) -> ModelOutput:
+        raise ModelGenerateError("x", status_code=503, provider_message="service unavailable")
+
+    [first] = inspect_eval(
+        inventory_lookup(),
+        model=get_model(MOCK, custom_outputs=always_fail),
+        sample_id=["single-SKU-1042"],
+        max_retries=0,
+        log_dir=str(tmp_path),
+        display="none",
+    )
+    code = main(["--resume", first.location, "--max-calls", "0", "--max-tokens", "0"])
+    assert code == 2
+    assert "REFUSED" in capsys.readouterr().err
