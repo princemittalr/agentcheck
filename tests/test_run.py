@@ -168,3 +168,11 @@ def test_load_env_reads_dotenv_without_overriding(
     assert os.environ["AGENTCHECK_TEST_A"] == "from_file"
     assert os.environ["AGENTCHECK_TEST_B"] == "from_shell"
     monkeypatch.delenv("AGENTCHECK_TEST_A")
+
+
+def test_suite_v4_doubles_the_budget(capsys: pytest.CaptureFixture[str]) -> None:
+    code = main(
+        ["--model", "mockllm/model", "--suite", "v4", "--max-calls", "1", "--max-tokens", "1"]
+    )
+    assert code == 2  # refused before anything runs
+    assert "Plan: 120 samples (v4)" in capsys.readouterr().out

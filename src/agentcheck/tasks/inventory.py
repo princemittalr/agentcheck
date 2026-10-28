@@ -181,33 +181,113 @@ def units_left(sku: str, ordered: int) -> int:
 UNKNOWN = ["SKU-1043", "SKU-4491", "SKU-6605", "SKU-7801", "SKU-0000", "SKU-9999"]
 
 
-def build_dataset() -> MemoryDataset:
+# --- suite v4: 60 more questions on the same catalog (power analysis, M6) -----------
+# v3 is kept unchanged so its logs stay comparable; v4 = v3 + these. Every combination
+# below differs from v3's (tested), and orders include exact-stock and stock+1 cases.
+SINGLE_V4 = ["SKU-6021", "SKU-6650", "SKU-7108", "SKU-7734", "SKU-8890", "SKU-9317"]
+VALUE_V4 = ["SKU-2177", "SKU-5583", "SKU-7108", "SKU-8890"]
+TRIPLES_V4 = [
+    ("SKU-1042", "SKU-3305", "SKU-5583"),
+    ("SKU-2177", "SKU-6650", "SKU-8890"),
+    ("SKU-4419", "SKU-7108", "SKU-9317"),
+    ("SKU-6021", "SKU-7734", "SKU-8266"),
+    ("SKU-1042", "SKU-4419", "SKU-7734"),
+    ("SKU-3305", "SKU-6021", "SKU-8266"),
+    ("SKU-5583", "SKU-7108", "SKU-2177"),
+    ("SKU-6650", "SKU-9317", "SKU-8266"),
+    ("SKU-8890", "SKU-7734", "SKU-5583"),
+    ("SKU-9317", "SKU-1042", "SKU-2177"),
+]
+QUINTUPLES_V4 = [
+    ("SKU-1042", "SKU-2177", "SKU-4419", "SKU-6650", "SKU-9317"),
+    ("SKU-3305", "SKU-6021", "SKU-7734", "SKU-8266", "SKU-8890"),
+    ("SKU-5583", "SKU-7108", "SKU-1042", "SKU-4419", "SKU-6021"),
+    ("SKU-6650", "SKU-7734", "SKU-9317", "SKU-2177", "SKU-3305"),
+    ("SKU-8266", "SKU-8890", "SKU-5583", "SKU-6650", "SKU-1042"),
+    ("SKU-9317", "SKU-3305", "SKU-7108", "SKU-4419", "SKU-8890"),
+    ("SKU-2177", "SKU-6021", "SKU-8266", "SKU-7734", "SKU-5583"),
+    ("SKU-4419", "SKU-6650", "SKU-1042", "SKU-8890", "SKU-7108"),
+]
+QUADRUPLES_V4 = [
+    ("SKU-1042", "SKU-2177", "SKU-5583", "SKU-7734"),
+    ("SKU-3305", "SKU-4419", "SKU-8266", "SKU-9317"),
+    ("SKU-6021", "SKU-6650", "SKU-7108", "SKU-1042"),
+    ("SKU-8890", "SKU-9317", "SKU-2177", "SKU-5583"),
+    ("SKU-7734", "SKU-3305", "SKU-6650", "SKU-8266"),
+    ("SKU-4419", "SKU-7108", "SKU-8890", "SKU-6021"),
+    ("SKU-5583", "SKU-1042", "SKU-9317", "SKU-3305"),
+    ("SKU-2177", "SKU-8266", "SKU-7734", "SKU-6650"),
+]
+ORDERS_V4 = [
+    ("SKU-4419", 8, "SKU-8266", 6),  # exactly the stock (filled); one over (rejected)
+    ("SKU-6021", 97, "SKU-7734", 20),
+    ("SKU-2177", 5, "SKU-9317", 77),
+    ("SKU-5583", 1250, "SKU-3305", 413),
+    ("SKU-8890", 100, "SKU-1042", 37),
+    ("SKU-7108", 311, "SKU-6650", 22),
+    ("SKU-9317", 78, "SKU-4419", 3),
+    ("SKU-1042", 1, "SKU-5583", 1251),
+]
+UNKNOWN_V4 = ["SKU-1024", "SKU-3350", "SKU-8269", "SKU-9371", "SKU-5538", "SKU-2717"]
+
+SUITES = ("v3", "v4")
+
+
+def build_dataset(suite: str = "v3") -> MemoryDataset:
+    """v3: the original 60 questions. v4: v3 plus 60 more (120)."""
+    if suite not in SUITES:
+        raise ValueError(f"unknown suite {suite!r}; choose from {SUITES}")
+    samples = _questions("", SINGLE, VALUE, TRIPLES, QUINTUPLES, QUADRUPLES, ORDERS, UNKNOWN)
+    if suite == "v4":
+        samples += _questions(
+            "v4-",
+            SINGLE_V4,
+            VALUE_V4,
+            TRIPLES_V4,
+            QUINTUPLES_V4,
+            QUADRUPLES_V4,
+            ORDERS_V4,
+            UNKNOWN_V4,
+        )
+    return MemoryDataset(samples, name="inventory")
+
+
+def _questions(
+    prefix: str,
+    single: list[str],
+    value: list[str],
+    triples: list[tuple[str, str, str]],
+    reorders: list[tuple[str, str, str, str, str]],
+    portfolios: list[tuple[str, str, str, str]],
+    orders: list[tuple[str, int, str, int]],
+    unknown: list[str],
+) -> list[Sample]:
     samples: list[Sample] = []
-    for sku in SINGLE:
+    for sku in single:
         samples.append(
             Sample(
-                id=f"single-{sku}",
+                id=f"{prefix}single-{sku}",
                 input=f"How many units of {sku} are in stock?",
                 target=str(CATALOG[sku].stock),
                 metadata={"category": "single"},
             )
         )
-    for sku in VALUE:
+    for sku in value:
         item = CATALOG[sku]
         samples.append(
             Sample(
-                id=f"value-{sku}",
+                id=f"{prefix}value-{sku}",
                 input=f"What is the total value in dollars of all {sku} units in stock "
                 "(units in stock times unit price)?",
                 target=str(item.stock * item.price),
                 metadata={"category": "value"},
             )
         )
-    for i, skus in enumerate(TRIPLES):
+    for i, skus in enumerate(triples):
         listed = ", ".join(skus)
         samples.append(
             Sample(
-                id=f"total-{i}",
+                id=f"{prefix}total-{i}",
                 input=f"How many units are in stock in total across {listed}?",
                 target=str(sum(CATALOG[s].stock for s in skus)),
                 metadata={"category": "total"},
@@ -215,36 +295,36 @@ def build_dataset() -> MemoryDataset:
         )
         samples.append(
             Sample(
-                id=f"most-{i}",
+                id=f"{prefix}most-{i}",
                 input=f"Which of {listed} has the most units in stock? Answer with the SKU.",
                 target=max(skus, key=lambda s: CATALOG[s].stock),
                 metadata={"category": "most"},
             )
         )
-    for i, skus5 in enumerate(QUINTUPLES):
+    for i, skus5 in enumerate(reorders):
         samples.append(
             Sample(
-                id=f"reorder-{i}",
+                id=f"{prefix}reorder-{i}",
                 input=f"How many of {', '.join(skus5)} need reordering, i.e. have stock at "
                 "or below their reorder level?",
                 target=str(sum(CATALOG[s].stock <= CATALOG[s].reorder for s in skus5)),
                 metadata={"category": "reorder"},
             )
         )
-    for i, skus4 in enumerate(QUADRUPLES):
+    for i, skus4 in enumerate(portfolios):
         samples.append(
             Sample(
-                id=f"portfolio-{i}",
+                id=f"{prefix}portfolio-{i}",
                 input=f"What is the total value in dollars of all stock of {', '.join(skus4)} "
                 "combined (for each SKU, units in stock times unit price, then add)?",
                 target=str(sum(CATALOG[s].stock * CATALOG[s].price for s in skus4)),
                 metadata={"category": "portfolio"},
             )
         )
-    for i, (a, n, b, m) in enumerate(ORDERS):
+    for i, (a, n, b, m) in enumerate(orders):
         samples.append(
             Sample(
-                id=f"orders-{i}",
+                id=f"{prefix}orders-{i}",
                 input=f"Two orders arrive: {n} units of {a} and {m} units of {b}. An order is "
                 "filled only if there is enough stock for all of it; otherwise it is rejected "
                 f"and stock is unchanged. After both orders, how many units of {a} and {b} "
@@ -253,16 +333,16 @@ def build_dataset() -> MemoryDataset:
                 metadata={"category": "orders"},
             )
         )
-    for sku in UNKNOWN:
+    for sku in unknown:
         samples.append(
             Sample(
-                id=f"unknown-{sku}",
+                id=f"{prefix}unknown-{sku}",
                 input=f"How many units of {sku} are in stock?",
                 target="UNKNOWN",
                 metadata={"category": "unknown"},
             )
         )
-    return MemoryDataset(samples, name="inventory")
+    return samples
 
 
 ANSWER_RE = re.compile(r"^\s*\**ANSWER\**:\**\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
@@ -341,8 +421,11 @@ def answer_line() -> Scorer:
 
 
 @task
-def inventory_lookup(tools: str = "live", cassette: str | None = None) -> Task:
-    """tools: live (default), record (call tools, save to cassette) or replay (cassette only)."""
+def inventory_lookup(tools: str = "live", cassette: str | None = None, suite: str = "v3") -> Task:
+    """tools: live (default), record (call tools, save to cassette) or replay (cassette only).
+
+    suite: v3 (60 questions) or v4 (v3 plus 60 more).
+    """
     mode = ToolMode(tools)
     agent_tools = [lookup_stock(), lookup_price(), lookup_reorder_level()]
     if mode is not ToolMode.LIVE:
@@ -351,7 +434,7 @@ def inventory_lookup(tools: str = "live", cassette: str | None = None) -> Task:
         tape = Cassette.open(Path(cassette), mode)
         agent_tools = [recorded(t, tape, mode) for t in agent_tools]
     return Task(
-        dataset=build_dataset(),
+        dataset=build_dataset(suite),
         solver=[
             system_message(SYSTEM_PROMPT),
             use_tools(*agent_tools),

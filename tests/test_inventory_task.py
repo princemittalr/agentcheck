@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from inspect_ai import eval as inspect_eval
+from inspect_ai.dataset import Sample
 from inspect_ai.log import EvalLog
 from inspect_ai.model import ChatMessage, ChatMessageTool, ModelOutput, ModelUsage, get_model
 from inspect_ai.model._model import ModelGenerateError  # private: only to simulate Groq's error
@@ -111,8 +112,66 @@ def test_hand_checked_targets() -> None:
     assert targets["orders-6"] == "37"  # 23 of 23 filled = 0; 38 > 37 rejected = 37
 
 
+# --- suite v4 ------------------------------------------------------------------------
+
+
+def test_v4_is_v3_plus_60_new_questions() -> None:
+    v3 = [(s.id, s.input, s.target) for s in build_dataset("v3")]
+    v4 = [(s.id, s.input, s.target) for s in build_dataset("v4")]
+    assert len(v4) == 120
+    assert v4[:60] == v3  # v3 untouched, so v3 logs stay comparable
+    assert len({i for i, _, _ in v4}) == 120
+    assert all(str(i).startswith("v4-") for i, _, _ in v4[60:])
+    counts = Counter(str((s.metadata or {})["category"]) for s in list(build_dataset("v4"))[60:])
+    assert counts == {
+        "single": 6,
+        "value": 4,
+        "total": 10,
+        "most": 10,
+        "unknown": 6,
+        "reorder": 8,
+        "portfolio": 8,
+        "orders": 8,
+    }
+
+
+def test_v4_questions_are_new() -> None:
+    """No v4 question repeats a v3 question (same SKUs in any order, same category)."""
+
+    def key(s: Sample) -> tuple[str, frozenset[str], str]:
+        text = str(s.input)
+        skus = frozenset(w.rstrip("?,") for w in text.split() if w.startswith("SKU-"))
+        numbers = ",".join(w for w in text.split() if w.isdigit())
+        return (str((s.metadata or {})["category"]), skus, numbers)
+
+    old = {key(s) for s in build_dataset("v3")}
+    new = [key(s) for s in list(build_dataset("v4"))[60:]]
+    assert not old & set(new)
+
+
+def test_v4_hand_checked_targets() -> None:
+    targets = {s.id: s.target for s in build_dataset("v4")}
+    assert targets["v4-single-SKU-9317"] == "77"
+    assert targets["v4-value-SKU-7108"] == "1866"  # 311 x 6
+    assert targets["v4-total-0"] == "1699"  # 37 + 412 + 1250
+    assert targets["v4-most-1"] == "SKU-8890"  # 142 > 23 > 0
+    # 37<=40 yes, 0<=10 yes, 8<=8 yes, 23>20 no, 77<=77 yes
+    assert targets["v4-reorder-0"] == "4"
+    assert targets["v4-portfolio-0"] == "3368"  # 444 + 0 + 1250 + 1674
+    assert targets["v4-portfolio-1"] == "10153"  # 1236 + 1920 + 4995 + 2002
+    assert targets["v4-orders-0"] == "5"  # 8 of 8 filled = 0; 6 > 5 rejected = 5
+    assert targets["v4-orders-3"] == "412"  # 1250 of 1250 = 0; 413 > 412 rejected
+    assert targets["v4-orders-7"] == "1286"  # 37-1 = 36; 1251 > 1250 rejected
+    assert targets["v4-unknown-SKU-3350"] == "UNKNOWN"
+
+
+def test_unknown_suite_is_refused() -> None:
+    with pytest.raises(ValueError, match="unknown suite"):
+        build_dataset("v9")
+
+
 def test_most_questions_have_no_ties() -> None:
-    for s in build_dataset():
+    for s in build_dataset("v4"):
         if (s.metadata or {})["category"] == "most":
             skus = [w.rstrip("?,") for w in str(s.input).split() if w.startswith("SKU-")]
             stocks = sorted((CATALOG[k].stock for k in skus), reverse=True)
@@ -120,9 +179,9 @@ def test_most_questions_have_no_ties() -> None:
 
 
 def test_unknown_skus_are_really_unknown() -> None:
-    for s in build_dataset():
+    for s in build_dataset("v4"):
         if s.target == "UNKNOWN":
-            sku = str(s.id).removeprefix("unknown-")
+            sku = str(s.id).removeprefix("v4-").removeprefix("unknown-")
             assert sku not in CATALOG
 
 

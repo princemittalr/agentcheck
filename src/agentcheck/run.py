@@ -17,7 +17,7 @@ from inspect_ai import eval_retry
 from inspect_ai.log import EvalLog, read_eval_log
 from inspect_ai.model import ChatMessageAssistant, Model
 
-from agentcheck.tasks.inventory import MESSAGE_LIMIT, build_dataset, inventory_lookup
+from agentcheck.tasks.inventory import MESSAGE_LIMIT, SUITES, build_dataset, inventory_lookup
 
 PROMPT_MESSAGES = 2  # system + user, present before the first model call
 # Groq's free tier limits tokens per minute (gpt-oss-20b: 8,000 total; qwen3.8-27b: 1,000
@@ -96,9 +96,10 @@ def run_capped(
     seed: int | None = None,
     tools: str = "live",
     cassette: str | None = None,
+    suite: str = "v3",
 ) -> EvalLog:
     [log] = inspect_eval(
-        inventory_lookup(tools=tools, cassette=cassette),
+        inventory_lookup(tools=tools, cassette=cassette, suite=suite),
         model=model,
         epochs=budget.epochs,
         limit=budget.samples,
@@ -138,6 +139,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="record tool results to --cassette, or replay them from it",
     )
     p.add_argument("--cassette", help="tool cassette (.json) for --tools record/replay")
+    p.add_argument("--suite", choices=list(SUITES), default="v3", help="v3: 60 questions; v4: 120")
     return p.parse_args(argv)
 
 
@@ -198,7 +200,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.model:
         print("REFUSED: --model is required unless --resume is given.", file=sys.stderr)
         return 2
-    n_samples = len(build_dataset())
+    n_samples = len(build_dataset(args.suite))
     budget = Budget(
         samples=min(args.limit, n_samples) if args.limit else n_samples,
         epochs=args.epochs,
@@ -206,7 +208,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         token_limit_per_sample=args.token_limit_per_sample,
     )
     print(
-        f"Plan: {budget.samples} samples x {budget.epochs} epochs on {args.model}\n"
+        f"Plan: {budget.samples} samples ({args.suite}) x {budget.epochs} epochs on {args.model}\n"
         f"  worst case: {budget.max_model_calls} model calls "
         f"({budget.max_http_requests} HTTP requests with retries), {budget.max_tokens} tokens"
     )
@@ -231,6 +233,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed=args.seed,
         tools=args.tools,
         cassette=args.cassette,
+        suite=args.suite,
     )
     return report(log, budget)
 

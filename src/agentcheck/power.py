@@ -107,3 +107,58 @@ def render(cells: Sequence[PowerCell], drop: float, label: str, target: float = 
             f"95% CI [{ci.low:.3f}, {ci.high:.3f}])"
         )
     return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class Advice:
+    current_epochs: int
+    needed: PowerCell | None  # smallest tested epoch count that reaches the target
+    tested: list[PowerCell]
+
+
+def epochs_needed(
+    pool: Pool,
+    current_epochs: int,
+    *,
+    drop: float = 0.10,
+    target: float = 0.80,
+    reps: int = 200,
+    alpha: float = 0.05,
+    n_resamples: int = 1000,
+    seed: int = 0,
+) -> Advice:
+    """At this suite size, how many epochs per run would detect `drop` with `target` power.
+
+    Epoch counts tried: 1, 2, 3, 5 and 10 times the current count. The pool is the
+    baseline log itself, so the answer reflects this suite's real per-sample noise.
+    """
+    grid = [current_epochs * m for m in (1, 2, 3, 5, 10)]
+    cells = power_grid(
+        pool,
+        [len(pool)],
+        grid,
+        drop=drop,
+        reps=reps,
+        alpha=alpha,
+        n_resamples=n_resamples,
+        seed=seed,
+    )
+    reached = [c for c in cells if c.detections.interval.low >= target]
+    return Advice(current_epochs, min(reached, key=lambda c: c.epochs, default=None), cells)
+
+
+def render_advice(a: Advice, drop: float, target: float = 0.80) -> str:
+    if a.needed is None:
+        best = max(a.tested, key=lambda c: c.detections.rate)
+        return (
+            f"More runs: even {best.epochs} epochs per sample detect a -{drop:.2f} drop only "
+            f"{best.detections.rate:.0%} of the time at {best.n_samples} samples. Add samples "
+            "(see `agentcheck power`)."
+        )
+    n = a.needed
+    return (
+        f"More runs: about {n.epochs} epochs per sample ({n.epochs - a.current_epochs} more "
+        f"than now) would detect a -{drop:.2f} drop with {target:.0%} power "
+        f"(simulated: {n.detections.rate:.2f}, 95% CI [{n.detections.interval.low:.2f}, "
+        f"{n.detections.interval.high:.2f}])."
+    )

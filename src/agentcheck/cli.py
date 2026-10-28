@@ -7,7 +7,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from inspect_ai.log import read_eval_log
+from inspect_ai.log import EvalLog, read_eval_log
 
 from agentcheck import calibrate, power, summary
 from agentcheck.compare import Verdict, compare_logs, render
@@ -24,6 +24,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     c.add_argument("--fdr", type=float, default=0.05, help="per-category FDR (default 0.05)")
     c.add_argument("--resamples", type=int, default=10_000, help="bootstrap resamples")
     c.add_argument("--seed", type=int, default=0, help="bootstrap seed")
+    c.add_argument(
+        "--min-effect",
+        type=float,
+        default=0.10,
+        help="drop that 'more runs' advice is sized for (default 0.10)",
+    )
 
     s = sub.add_parser("summary", help="per-category summary of one log")
     s.add_argument("log", nargs="?")
@@ -79,7 +85,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {ex}", file=sys.stderr)
         return 2
     print(render(result, base, cand))
+    if result.verdict is Verdict.INCONCLUSIVE:
+        print(more_runs_advice(base, args.min_effect, args.seed))
     return 1 if result.verdict is Verdict.REGRESSION else 0
+
+
+def more_runs_advice(baseline: EvalLog, min_effect: float, seed: int) -> str:
+    records = summary.per_sample(baseline)
+    epochs = min(len(r.passes) for r in records.values())
+    if epochs < 2:
+        return (
+            "More runs: the baseline has 1 epoch per sample, so its per-sample noise is "
+            "unknown. Rerun it with --epochs 2 or more to get an estimate."
+        )
+    pool = {k: r.passes for k, r in records.items()}
+    try:
+        advice = power.epochs_needed(pool, epochs, drop=min_effect, seed=seed)
+    except ValueError as ex:
+        return f"More runs: no estimate ({ex})."
+    return power.render_advice(advice, min_effect)
 
 
 def load_pool(args: argparse.Namespace, n_samples: int = 60) -> tuple[calibrate.Run, str]:

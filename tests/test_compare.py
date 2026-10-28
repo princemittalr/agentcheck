@@ -133,7 +133,9 @@ def test_cli_exit_codes(
 ) -> None:
     base, same, worse = logs
     assert main(["compare", base.location, same.location]) == 0
-    assert "VERDICT: INCONCLUSIVE" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "VERDICT: INCONCLUSIVE" in out
+    assert "Rerun it with --epochs 2" in out  # 1-epoch baseline: no noise estimate
     assert main(["compare", base.location, worse.location]) == 1
     out = capsys.readouterr().out
     assert "VERDICT: REGRESSION" in out
@@ -152,3 +154,29 @@ def test_cli_refuses_unfinished_log(
     write_eval_log(broken, str(path))
     assert main(["compare", base.location, str(path)]) == 2
     assert "not 'success'" in capsys.readouterr().err
+
+
+def test_cli_inconclusive_with_epochs_gives_more_runs_advice(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def two_epoch_log(name: str) -> EvalLog:
+        def model(input: list[object], *args: object) -> ModelOutput:
+            out = ModelOutput.from_content(MOCK, "ANSWER: 37")
+            out.usage = ModelUsage(input_tokens=0, output_tokens=0, total_tokens=0)
+            return out
+
+        [log] = inspect_eval(
+            inventory_lookup(),
+            model=get_model(MOCK, custom_outputs=model),
+            sample_id=["single-SKU-1042", "single-SKU-2177"],
+            epochs=2,
+            log_dir=str(tmp_path / name),
+            display="none",
+        )
+        return log
+
+    base, cand = two_epoch_log("a"), two_epoch_log("b")
+    assert main(["compare", base.location, cand.location]) == 0
+    out = capsys.readouterr().out
+    assert "VERDICT: INCONCLUSIVE" in out
+    assert "More runs:" in out

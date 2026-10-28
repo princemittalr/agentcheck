@@ -6,7 +6,15 @@ import pytest
 
 from agentcheck.calibrate import estimate, synthetic_pool
 from agentcheck.cli import main
-from agentcheck.power import PowerCell, cheapest, expand_pool, power_grid, render
+from agentcheck.power import (
+    PowerCell,
+    cheapest,
+    epochs_needed,
+    expand_pool,
+    power_grid,
+    render,
+    render_advice,
+)
 
 
 def test_expand_pool_draws_whole_samples() -> None:
@@ -66,3 +74,18 @@ def test_cli_power(capsys: pytest.CaptureFixture[str]) -> None:
 def test_cli_power_needs_a_pool(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["power"]) == 2
     assert "not both or neither" in capsys.readouterr().err
+
+
+def test_epochs_needed_finds_a_count_for_a_big_enough_suite() -> None:
+    pool = synthetic_pool(n_samples=120, mean=0.8, seed=2)
+    advice = epochs_needed(pool, 1, reps=120, n_resamples=500)
+    assert advice.needed is not None
+    assert advice.needed.epochs in (2, 3, 5, 10)
+    assert "more than now" in render_advice(advice, 0.10)
+
+
+def test_epochs_needed_says_add_samples_when_epochs_cannot_help() -> None:
+    pool = synthetic_pool(n_samples=12, mean=0.8, seed=3)
+    advice = epochs_needed(pool, 1, reps=60, n_resamples=300)
+    assert advice.needed is None
+    assert "Add samples" in render_advice(advice, 0.10)

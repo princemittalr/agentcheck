@@ -50,8 +50,10 @@ Last updated: 2026-10-28
 - [ ] Step 4: real pool: gpt-oss-20b 60 x 5 (noisy regime)
 
 ### M6 steps
-- [x] Step 1: `agentcheck power` (detection over a samples x epochs grid, cheapest design whose 95% CI clears 80%); permutation test vectorised with NumPy
-- [ ] Step 2: "how many more epochs" in `compare` output, and sequential testing (stop early with alpha spending)
+- [x] Step 1: `agentcheck power` (detection over a samples x epochs grid, cheapest design whose 95% CI clears 80%); permutation test vectorised with NumPy (1981881)
+- [x] Step 2: "how many more epochs" advice in `compare` when inconclusive (simulated from the baseline log; needs >= 2 epochs)
+- [x] Step 2b: suite v4 (120 questions = v3 + 60 new on the same catalog), `--suite v4`; chosen by MNV 2026-10-28 after the power results
+- [ ] Step 3: sequential testing (stop early with alpha spending)
 
 ## Key design decisions
 
@@ -130,6 +132,8 @@ Last updated: 2026-10-28
 - **"Cheapest design" requires the whole 95% interval of the detection rate to clear the target**, not just the point estimate.
 - **NumPy for the permutation sign matrix** (runtime dependency, already pulled in by inspect-ai): ~2.5 ms per 2,000-resample test at 480 samples versus ~0.5 s in pure Python. Exact-path results are unchanged; Monte Carlo p-values use a different random stream than commit 775a340, so recorded calibration numbers are tied to that commit.
 
+- **Suite v4 = v3 + 60 new questions, v3 untouched** (MNV's decision after the power grid): v3 logs stay comparable (tested: v4's first 60 equal v3 exactly), the catalog and tools are unchanged so cassettes still apply, and no v4 question repeats a v3 one (tested). Mix: single 6, value 4 (only 4 unused SKUs remain), total 10, most 10, reorder 8, portfolio 8, orders 8 (with exact-stock and stock+1 boundaries), unknown 6.
+
 ## Measured results
 
 Every number here comes from a pasted run output.
@@ -177,6 +181,31 @@ Verdict for multi-epoch runs = **sign-flip permutation test** (current, commit 7
 Status against the acceptance targets (synthetic pools): false alarms <= 5% is **met** in
 all 6 settings. Detection >= 80% of a 10-point drop is **not met** with 60 samples at 1
 or 5 epochs (best 0.723). M6 measures what sample count and epoch count reach it.
+
+### Power, synthetic pools (2026-10-28, commit 1981881, 300 reps per cell, alpha 0.05, -0.10 drop)
+
+Detection rate by samples per run (rows) and epochs per sample (columns):
+
+| Pool (mean, spread) | samples | 1 ep | 3 ep | 5 ep | 10 ep |
+|---|---|---|---|---|---|
+| 0.95, 1 | 60 | 0.487 | 0.663 | 0.707 | 0.777 |
+| 0.95, 1 | 120 | 0.880 | 0.987 | 0.993 | 0.993 |
+| 0.95, 1 | 240 | 1.000 | 1.000 | 1.000 | 1.000 |
+| 0.8, 4 | 60 | 0.213 | 0.440 | 0.553 | 0.707 |
+| 0.8, 4 | 120 | 0.437 | 0.797 | 0.940 | 0.970 |
+| 0.8, 4 | 240 | 0.750 | 0.980 | 1.000 | 1.000 |
+| 0.6, 4 | 60 | 0.180 | 0.453 | 0.513 | 0.797 |
+| 0.6, 4 | 120 | 0.390 | 0.753 | 0.847 | 0.953 |
+| 0.6, 4 | 240 | 0.667 | 0.987 | 0.997 | 1.000 |
+
+Cheapest design whose 95% CI clears 80%: 120 x 1 (0.95 pool, 0.880 [0.838, 0.912]);
+120 x 5 (0.8 pool, 0.940 [0.907, 0.962]); 120 x 5 (0.6 pool, 0.847 [0.802, 0.883]).
+
+**Finding:** at 60 samples no tested epoch count (up to 10) reaches 80% with confidence; at
+120 samples, 1-5 epochs do. Detection is limited mainly by the number of samples, because
+a regression that breaks whole questions is only visible across questions; more epochs
+mostly remove within-question noise. Consequence: the suite should grow to about 120
+samples for the 10-point target.
 
 Findings: (1) exact McNemar keeps false alarms well under 5% but detects a 10-point drop
 only 16-48% of the time from one epoch of 60 samples; (2) the percentile bootstrap is

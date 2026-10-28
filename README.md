@@ -17,6 +17,9 @@ or inconclusive**, and if inconclusive, roughly how many more runs are needed to
 agentcheck compare base.eval cand.eval
 ```
 
+When inconclusive, it also estimates how many epochs per sample would detect a drop of
+`--min-effect` (default 0.10) with 80% power, by simulating from the baseline log.
+
 Prints the verdict (REGRESSION, IMPROVEMENT or INCONCLUSIVE), the pass-rate difference
 with its confidence interval and p-value, and a per-category table with
 Benjamini-Hochberg adjusted p-values. Exit code 1 on a regression, 0 otherwise, 2 on bad
@@ -31,6 +34,7 @@ Put `GROQ_API_KEY=...` in `.env` (git-ignored), then:
 python -m agentcheck.run --model groq/qwen/qwen3.8-27b --epochs 1 --max-calls 660 --max-tokens 960000
 ```
 
+Add `--suite v4` for the 120-question suite (v3, the default, is the original 60).
 The runner prints the worst-case number of model calls and tokens first and refuses to
 start if either exceeds the caps. To summarise the newest log per category, with
 samples that pass in some epochs but not others listed:
@@ -118,10 +122,12 @@ changes between runs (a live API, a clock) is not mistaken for an agent regressi
 
 ## Limitations
 
-- The task suite is 60 synthetic warehouse questions in 8 categories.
+- The task suite is synthetic warehouse questions in 8 categories: v3 has 60, v4 adds 60 more
+  (120) on the same catalog because 60 samples cannot reliably detect a 10-point drop
+  (see PROGRESS.md, power results).
 - False-alarm and detection rates are not measured yet (M5); until then the verdicts are
   untested in the sense that matters.
-- `compare` does not yet print "how many more runs" itself; `agentcheck power` answers it by simulation (M6).
+- "How many more runs" (printed when inconclusive) needs a baseline with at least 2 epochs per sample, and only varies epochs at the current suite size; it is a simulation on the baseline's own outcomes, so it inherits that log's noise.
 - Record/replay covers tools with scalar results (text, numbers, booleans) keyed on exact
   arguments. An agent that calls a tool with arguments never recorded fails in replay mode;
   re-record when the suite or the tools change.
