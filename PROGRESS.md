@@ -26,8 +26,8 @@ Last updated: 2026-10-22
 - [x] Step 2: capped runner (`python -m agentcheck.run`), first real Groq run (steps 1 and 2 landed together in commit e7ca6c4)
 - [ ] Step 3: 36-sample suite (5 categories, 2 tools, ANSWER-line scorer); 1-epoch difficulty check
 - [x] Step 3 difficulty check on 3 models (see results); gpt-oss-20b dominated by Groq parse errors, the other two at ceiling
-- [ ] Step 4: suite v3, 60 samples (3 harder categories, reorder-level tool); difficulty check on qwen3.8-27b
-- [ ] Step 5: epochs = 5 run; read logs programmatically
+- [x] Step 4: suite v3, 60 samples (3 harder categories, reorder-level tool); difficulty check on qwen3.8-27b: 58/60
+- [ ] Step 5: `agentcheck.summary` log reader; 60 x 5 epoch run on qwen3.8-27b (closes M1)
 
 ## Key design decisions
 
@@ -50,6 +50,9 @@ Last updated: 2026-10-22
 - **Primary model: `groq/qwen/qwen3.8-27b`**: 0 output errors and fewest calls of the 3 tool-calling models on MNV's key; gpt-oss-20b's 13/36 parse failures would swamp a 10-point regression.
 - **gpt-oss-20b kept as a candidate "weaker model" regression for M5**: its failures are real failures of that agent stack.
 - **Suite v3 adds harder categories (reorder, portfolio, orders)**: at 100% baseline, A/A tests are vacuous (no discordant pairs, so a false alarm is impossible) and nothing can register as an improvement.
+- **Keep qwen3.8-27b primary despite 0.967 on v3**: rather than escalating task difficulty indefinitely (more tokens per run on a free tier), M5 will calibrate in two regimes: qwen (high pass rate, few flaky samples) and gpt-oss-20b (about 0.6, many flaky samples). Revisit if the 5-epoch run shows no flaky samples at all.
+- **Epochs are repeated attempts on the same sample, not new samples**: 60 x 5 = 300 trials but only 60 independent units; the statistics must treat epochs as clustered within samples (M2/M3).
+- **`agentcheck.summary` is descriptive only**: counts, rates, flaky and always-failing samples; no inference, so it isn't part of the statistics core.
 - **`--seed` refused with `--epochs > 1`**: the same seed goes to every epoch, which could replay identical outputs and hide the run-to-run variance we're measuring.
 - **Fictional tool data**: the model can only answer by calling the tool, so the task measures tool use, not memorised facts.
 - **`ToolError` for bad tool input, nothing else caught**: the model sees a recoverable error; real bugs still fail the sample loudly.
@@ -76,6 +79,8 @@ Attempt 2026-10-22, 36 x 1 (after the rate-limit fix): stopped by Groq 400 `outp
 | 2026-10-22 | inventory v2 (36 samples) | groq/openai/gpt-oss-20b, seed 0 | 36 x 1 | 22/36 (0.611); 13 of the 14 failures were Groq `output_parse_failed` | 86 calls (bound 252), 31,204 tokens | $0 |
 | 2026-10-22 | inventory v2 (36 samples) | groq/qwen/qwen3.8-27b, seed 0 | 36 x 1 | 36/36 (1.000); 0 output errors | 72 calls (bound 252), 41,951 tokens | $0 |
 | 2026-10-22 | inventory v2 (36 samples) | groq/openai/gpt-oss-120b, seed 0 | 36 x 1 | 35/36 (0.972); 0 output errors | 111 calls (bound 252), 45,414 tokens | $0 |
+
+| 2026-10-22 | inventory v3 (60 samples) | groq/qwen/qwen3.8-27b, seed 0 | 60 x 1 | 58/60 (0.967); 0 output errors | 120 calls (bound 660), 93,630 tokens, 16.5 min | $0 |
 
 Note: single runs, no intervals yet (Wilson intervals arrive in M2). n = 5 is far too small for any conclusion; 5/5 also shows the ceiling effect that motivated the harder suite in step 3.
 

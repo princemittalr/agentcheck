@@ -25,7 +25,12 @@ python -m agentcheck.run --model groq/qwen/qwen3.8-27b --epochs 1 --max-calls 66
 ```
 
 The runner prints the worst-case number of model calls and tokens first and refuses to
-start if either exceeds the caps.
+start if either exceeds the caps. To summarise the newest log per category, with
+samples that pass in some epochs but not others listed:
+
+```
+python -m agentcheck.summary
+```
 
 ## How it works (planned)
 
