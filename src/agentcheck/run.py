@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import find_dotenv, load_dotenv
 from inspect_ai import eval as inspect_eval
 from inspect_ai import eval_retry
 from inspect_ai.log import EvalLog, read_eval_log
@@ -171,8 +172,18 @@ def resume(args: argparse.Namespace) -> int:
     return report(log, budget)
 
 
+def load_env() -> None:
+    """Load .env from the working directory (or a parent) without overriding real env vars.
+
+    Inspect does this inside eval() but not inside eval_retry(), so resuming a run
+    failed with "No GROQ_API_KEY defined". Loading it here covers both paths.
+    """
+    load_dotenv(find_dotenv(usecwd=True), override=False)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    load_env()
     if args.resume:
         return resume(args)
     if not args.model:

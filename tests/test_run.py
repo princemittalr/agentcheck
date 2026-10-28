@@ -1,5 +1,6 @@
 """Tests for the capped runner. All offline: mockllm only."""
 
+import os
 from collections.abc import Sequence
 from importlib.metadata import entry_points
 from pathlib import Path
@@ -17,6 +18,7 @@ from agentcheck.run import (
     BudgetExceededError,
     check_budget,
     count_model_calls,
+    load_env,
     main,
     max_calls_per_sample,
     remaining_samples,
@@ -153,3 +155,16 @@ def test_resume_respects_the_budget(tmp_path: Path, capsys: pytest.CaptureFixtur
     code = main(["--resume", first.location, "--max-calls", "0", "--max-tokens", "0"])
     assert code == 2
     assert "REFUSED" in capsys.readouterr().err
+
+
+def test_load_env_reads_dotenv_without_overriding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".env").write_text("AGENTCHECK_TEST_A=from_file\nAGENTCHECK_TEST_B=from_file\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("AGENTCHECK_TEST_A", raising=False)
+    monkeypatch.setenv("AGENTCHECK_TEST_B", "from_shell")
+    load_env()
+    assert os.environ["AGENTCHECK_TEST_A"] == "from_file"
+    assert os.environ["AGENTCHECK_TEST_B"] == "from_shell"
+    monkeypatch.delenv("AGENTCHECK_TEST_A")

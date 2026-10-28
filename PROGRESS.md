@@ -55,6 +55,8 @@ Last updated: 2026-10-22
 - **`agentcheck.summary` is descriptive only**: counts, rates, flaky and always-failing samples; no inference, so it isn't part of the statistics core.
 - **Tasks registered via an `inspect_ai` entry point (`agentcheck._registry`)**: Inspect can only resume (`eval_retry`) tasks it can find by package name.
 - **`--resume LOG` in the runner, with the same budget check**: resuming keeps finished samples instead of paying for them twice; the bound is computed for the remaining sample-epochs.
+- **The runner loads `.env` itself** (python-dotenv, never overriding real env vars): Inspect loads it in `eval()` but not in `eval_retry()`.
+- **Free-tier daily budget shapes the plan**: qwen3.8-27b allows 200,000 tokens/day (about 125 sample-epochs of suite v3). Long runs are resumed across days, and M5's calibration must resample from a fixed pool of logged epochs rather than make thousands of fresh runs.
 - **max_retries 8 -> 40**: qwen3.8-27b's free-tier limit is 1,000 output tokens per minute and 8 retries ran out; rejected requests cost nothing.
 - **`--seed` refused with `--epochs > 1`**: the same seed goes to every epoch, which could replay identical outputs and hide the run-to-run variance we're measuring.
 - **Fictional tool data**: the model can only answer by calling the tool, so the task measures tool use, not memorised facts.
@@ -85,13 +87,13 @@ Attempt 2026-10-22, 36 x 1 (after the rate-limit fix): stopped by Groq 400 `outp
 
 | 2026-10-22 | inventory v3 (60 samples) | groq/qwen/qwen3.8-27b, seed 0 | 60 x 1 | 58/60 (0.967); 0 output errors | 120 calls (bound 660), 93,630 tokens, 16.5 min | $0 |
 
-Attempt 2026-10-28, v3 60 x 5 on qwen3.8-27b (no seed): stopped by the 1,000 output-tokens-per-minute limit after 93 of 300 sample-epochs, 187 calls, 142,553 tokens. Resumed with `--resume` (result below once complete).
+Attempt 2026-10-28, v3 60 x 5 on qwen3.8-27b (no seed): stopped by the 1,000 output-tokens-per-minute limit after 93 of 300 sample-epochs, 187 calls, 142,553 tokens. Resumed 2026-10-28: stopped by the 200,000 tokens/day limit at 131 of 300 (264 calls, 204,469 tokens in the resumed part). To be resumed on later days.
 
 Note: single runs, no intervals yet (Wilson intervals arrive in M2). n = 5 is far too small for any conclusion; 5/5 also shows the ceiling effect that motivated the harder suite in step 3.
 
 ## Open questions
 
 - inspect_ai 0.3.283 emits a tenacity DeprecationWarning and an unclosed anyio stream warning in tests. Check after upgrades; possibly worth an upstream issue (M8 contact).
-- Groq free tier for gpt-oss-20b: 8,000 tokens/minute (from a 429 message). Daily limits unknown; a 429 on a per-day limit will stop a run with a clear error.
+- Groq free-tier limits seen in 429 messages: gpt-oss-20b 8,000 tokens/minute; qwen3.8-27b 1,000 output tokens/minute and 200,000 tokens/day. Other limits unknown.
 - Inspect prints "Control server failed to start ... no attribute 'AF_UNIX'" on Windows. Harmless (optional feature), evals run normally.
 - License for the repo (MIT is a common default).

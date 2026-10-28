@@ -12,6 +12,7 @@ requires-python = ">=3.11"
 # inspect_ai's API changes between releases: the upper bound makes upgrades deliberate.
 dependencies = [
     "inspect-ai>=0.3.283,<0.4",
+    "python-dotenv>=1.0",
 ]
 
 # Registers our tasks with Inspect so logs can be resumed (`eval_retry`). Inspect looks
