@@ -1,14 +1,14 @@
 # AgentCheck progress
 
-Last updated: 2026-10-22
+Last updated: 2026-10-28
 
 ## Milestone status
 
 | Milestone | Description | Status |
 |---|---|---|
 | M0 | Repo scaffold: pyproject, ruff, mypy, pytest, CI, README, PROGRESS | Done (2026-10-22) |
-| M1 | Inspect task suite, 30+ samples, epochs >= 5 | In progress (step 1) |
-| M2 | Statistics core, verified against SciPy/statsmodels | Not started |
+| M1 | Inspect task suite, 30+ samples, epochs >= 5 | In progress (step 5: 60 x 5 run resuming daily) |
+| M2 | Statistics core, verified against SciPy/statsmodels | In progress (step 1 done: Wilson interval) |
 | M3 | Log reader and `agentcheck compare` | Not started |
 | M4 | Tool record/replay | Not started |
 | M5 | Calibration benchmark (A/A and injected regressions) | Not started |
@@ -27,7 +27,10 @@ Last updated: 2026-10-22
 - [ ] Step 3: 36-sample suite (5 categories, 2 tools, ANSWER-line scorer); 1-epoch difficulty check
 - [x] Step 3 difficulty check on 3 models (see results); gpt-oss-20b dominated by Groq parse errors, the other two at ceiling
 - [x] Step 4: suite v3, 60 samples (3 harder categories, reorder-level tool); difficulty check on qwen3.8-27b: 58/60
-- [ ] Step 5: `agentcheck.summary` log reader; 60 x 5 epoch run on qwen3.8-27b (closes M1)
+- [ ] Step 5: `agentcheck.summary` log reader (done); 60 x 5 epoch run on qwen3.8-27b, 131/300 so far, resumed daily under the 200k tokens/day limit (closes M1)
+
+### M2 steps (tests written first)
+- [x] Step 1: `wilson_interval` (stats/intervals.py) against Newcombe (1998) Table I, closed forms at k=0 and k=n, and SciPy `binomtest(...).proportion_ci(method="wilson")` on random inputs
 
 ## Key design decisions
 
@@ -69,6 +72,12 @@ Last updated: 2026-10-22
 - **max_connections=1, max_retries=8** (was 2 and 3): the first 36-sample run hit Groq's free-tier limit of 8,000 tokens per minute and gave up after 3 short retries. Sending one request at a time with longer backoff waits the window out; retries are counted in the printed HTTP-request bound.
 - **Infrastructure errors fail the whole run (Inspect's default `fail_on_error`)**: silently dropping errored samples would bias pass rates, because the samples that error, the long multi-lookup ones, aren't random.
 - **Model-output errors are scored as wrong answers** (Groq 400 `output_parse_failed`: the model emitted a tool call Groq couldn't parse). It's the agent stack failing, so dropping it would hide exactly the kind of regression we want to catch, and retrying would condition on success and inflate the pass rate. Counted and printed separately by the runner.
+
+- **Ownership changed 2026-10-28 (MNV's call)**: Claude writes the statistics core too, without explanations unless asked. Tests still come first and are never weakened.
+- **Statistics core implemented by hand; SciPy is a test-only reference**: every formula must be explainable line by line, and SciPy (dev extra) checks it on random inputs. The package never imports SciPy at runtime.
+- **Normal quantile from the stdlib (`statistics.NormalDist().inv_cdf`)**: no runtime dependency needed for z; matches SciPy's `norm.ppf` to about 1e-15.
+- **Wilson score interval, not Wald, for pass rates**: Wald collapses to zero width at 0/n and n/n and overshoots [0, 1] near the ceiling (58/60 gives an upper bound of 1.012). Wilson stays inside [0, 1] and has near-nominal coverage at small n.
+- **Exact bounds at the edges**: low is exactly 0.0 at k=0 and high exactly 1.0 at k=n, not a float rounding artefact such as -1e-17.
 
 ## Measured results
 

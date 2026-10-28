@@ -26,6 +26,8 @@ dev = [
     "hypothesis>=6.100",
     "ruff>=0.6",
     "mypy>=1.11",
+    # Reference implementations for tests only. The statistics core never imports SciPy.
+    "scipy>=1.13",
 ]
 # Model provider for real runs. Not needed for tests, which use Inspect's mockllm.
 groq = [
@@ -51,6 +53,11 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "PT", "BLE"]
 strict = true
 files = ["src", "tests"]
 warn_unreachable = true
+
+[[tool.mypy.overrides]]
+# SciPy ships without complete type hints; it is only used in tests.
+module = ["scipy", "scipy.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
