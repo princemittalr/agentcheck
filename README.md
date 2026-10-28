@@ -46,6 +46,19 @@ completed samples; the budget check applies to what is left:
 python -m agentcheck.run --resume logs/<interrupted>.eval --max-calls N --max-tokens N
 ```
 
+### Recording and replaying tool calls
+
+```
+python -m agentcheck.run --model M --tools record --cassette tape.json --max-calls N --max-tokens N
+python -m agentcheck.run --model M --tools replay --cassette tape.json --max-calls N --max-tokens N
+```
+
+`record` calls the real tools and stores each result (or tool error) under the tool name
+and arguments; the first result for a call wins. `replay` answers from the cassette only
+and never calls the tool; a call that was not recorded fails the run instead of being
+guessed. Use it so baseline and candidate see identical tool outputs, and a tool that
+changes between runs (a live API, a clock) is not mistaken for an agent regression.
+
 ## How it works (planned)
 
 1. Run a small agentic task suite in Inspect with several epochs per sample.
@@ -83,6 +96,9 @@ python -m agentcheck.run --resume logs/<interrupted>.eval --max-calls N --max-to
 - False-alarm and detection rates are not measured yet (M5); until then the verdicts are
   untested in the sense that matters.
 - No "how many more runs" estimate yet (M6).
+- Record/replay covers tools with scalar results (text, numbers, booleans) keyed on exact
+  arguments. An agent that calls a tool with arguments never recorded fails in replay mode;
+  re-record when the suite or the tools change.
 - Groq's free tier limits a model to about 125 sample-epochs a day on this suite.
 
 ## Development

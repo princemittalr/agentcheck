@@ -16,6 +16,7 @@ that every model aces cannot show a regression.
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import MemoryDataset, Sample
@@ -23,6 +24,8 @@ from inspect_ai.model import ModelOutput
 from inspect_ai.scorer import CORRECT, INCORRECT, Score, Scorer, Target, accuracy, scorer, stderr
 from inspect_ai.solver import Generate, Solver, TaskState, solver, system_message, use_tools
 from inspect_ai.tool import Tool, ToolError, tool
+
+from agentcheck.replay import Cassette, ToolMode, recorded
 
 
 @dataclass(frozen=True)
@@ -338,12 +341,20 @@ def answer_line() -> Scorer:
 
 
 @task
-def inventory_lookup() -> Task:
+def inventory_lookup(tools: str = "live", cassette: str | None = None) -> Task:
+    """tools: live (default), record (call tools, save to cassette) or replay (cassette only)."""
+    mode = ToolMode(tools)
+    agent_tools = [lookup_stock(), lookup_price(), lookup_reorder_level()]
+    if mode is not ToolMode.LIVE:
+        if cassette is None:
+            raise ValueError(f"tools={mode.value} needs a cassette path")
+        tape = Cassette.open(Path(cassette), mode)
+        agent_tools = [recorded(t, tape, mode) for t in agent_tools]
     return Task(
         dataset=build_dataset(),
         solver=[
             system_message(SYSTEM_PROMPT),
-            use_tools(lookup_stock(), lookup_price(), lookup_reorder_level()),
+            use_tools(*agent_tools),
             generate_scoring_output_errors(),
         ],
         scorer=answer_line(),

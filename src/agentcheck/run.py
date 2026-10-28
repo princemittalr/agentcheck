@@ -94,9 +94,11 @@ def run_capped(
     *,
     log_dir: str,
     seed: int | None = None,
+    tools: str = "live",
+    cassette: str | None = None,
 ) -> EvalLog:
     [log] = inspect_eval(
-        inventory_lookup(),
+        inventory_lookup(tools=tools, cassette=cassette),
         model=model,
         epochs=budget.epochs,
         limit=budget.samples,
@@ -129,6 +131,13 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     p.add_argument("--token-limit-per-sample", type=int, default=16_000)
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--log-dir", default="logs")
+    p.add_argument(
+        "--tools",
+        choices=["live", "record", "replay"],
+        default="live",
+        help="record tool results to --cassette, or replay them from it",
+    )
+    p.add_argument("--cassette", help="tool cassette (.json) for --tools record/replay")
     return p.parse_args(argv)
 
 
@@ -206,13 +215,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         # that hides exactly the run-to-run variance AgentCheck exists to measure.
         print("REFUSED: --seed with --epochs > 1 would repeat one sample path.", file=sys.stderr)
         return 2
+    if args.tools != "live" and not args.cassette:
+        print(f"REFUSED: --tools {args.tools} needs --cassette PATH.", file=sys.stderr)
+        return 2
     try:
         check_budget(budget, args.max_calls, args.max_tokens)
     except BudgetExceededError as e:
         print(f"REFUSED: {e}. Nothing was sent.", file=sys.stderr)
         return 2
 
-    log = run_capped(args.model, budget, log_dir=args.log_dir, seed=args.seed)
+    log = run_capped(
+        args.model,
+        budget,
+        log_dir=args.log_dir,
+        seed=args.seed,
+        tools=args.tools,
+        cassette=args.cassette,
+    )
     return report(log, budget)
 
 

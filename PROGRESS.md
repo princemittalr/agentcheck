@@ -9,8 +9,8 @@ Last updated: 2026-10-28
 | M0 | Repo scaffold: pyproject, ruff, mypy, pytest, CI, README, PROGRESS | Done (2026-10-22) |
 | M1 | Inspect task suite, 30+ samples, epochs >= 5 | In progress (step 5: 60 x 5 run resuming daily) |
 | M2 | Statistics core, verified against SciPy/statsmodels | Done (2026-10-28): Wilson, exact McNemar, cluster bootstrap, Benjamini-Hochberg; power/sequential in M6, kappa in M7 |
-| M3 | Log reader and `agentcheck compare` | In progress (step 1: compare CLI) |
-| M4 | Tool record/replay | Not started |
+| M3 | Log reader and `agentcheck compare` | Done (2026-10-28): first real verdict recorded |
+| M4 | Tool record/replay | Done (2026-10-28): cassette record/replay, runner `--tools/--cassette` |
 | M5 | Calibration benchmark (A/A and injected regressions) | Not started |
 | M6 | Power analysis and sequential stopping | Not started |
 | M7 | LLM-judge calibration (kappa, position bias) | Not started |
@@ -37,7 +37,10 @@ Last updated: 2026-10-28
 
 ### M3 steps
 - [x] Step 1: `agentcheck compare` (verdict, CI, p-value, per-category BH table), `agentcheck` console script, bootstrap p-value; tested on mockllm logs (A/A inconclusive, 8 broken samples flagged as regression)
-- [ ] Step 2: first real comparison (qwen3.8-27b vs gpt-oss-20b on suite v3, 60 x 1)
+- [x] Step 2: first real comparison (qwen3.8-27b vs gpt-oss-20b on suite v3, 60 x 1): REGRESSION, exit code 1
+
+### M4 steps
+- [x] Step 1: `agentcheck.replay` (Cassette, `recorded` wrapper via Inspect `ToolDef`), task args `tools`/`cassette`, runner flags; tested standalone and inside real Inspect evals (replay serves an edited cassette value; a replay miss makes the run status `error`)
 
 ## Key design decisions
 
@@ -99,6 +102,12 @@ Last updated: 2026-10-28
 - **Exit code 1 only for a regression**: inconclusive passes a CI gate; M6 adds "how many more runs".
 - **Bootstrap two-sided p-value = 2 x min(share of resampled means <= 0, share >= 0)**: consistent with the percentile interval, used for BH on multi-epoch runs.
 
+- **Replay miss is an infrastructure error, not a wrong answer**: inventing a tool result, or scoring the sample as failed, would mix tool coverage into the agent's pass rate.
+- **First recorded result wins (snapshot)**: a non-deterministic tool returns the same value to baseline and candidate, so differences come from the agent.
+- **Cassette written atomically after every new entry**: free-tier runs get interrupted; a recording survives and resumes.
+- **Cassette key = tool name + JSON of arguments with sorted keys**: argument order never matters; any other difference in arguments is a different call.
+- **Tool wrapper keeps the tool's name, description and parameter schema**: the model sees exactly the same tool in all three modes (tested).
+
 ## Measured results
 
 Every number here comes from a pasted run output.
@@ -115,6 +124,10 @@ Attempt 2026-10-22, 36 x 1 (after the rate-limit fix): stopped by Groq 400 `outp
 | 2026-10-22 | inventory v2 (36 samples) | groq/openai/gpt-oss-120b, seed 0 | 36 x 1 | 35/36 (0.972); 0 output errors | 111 calls (bound 252), 45,414 tokens | $0 |
 
 | 2026-10-22 | inventory v3 (60 samples) | groq/qwen/qwen3.8-27b, seed 0 | 60 x 1 | 58/60 (0.967); 0 output errors | 120 calls (bound 660), 93,630 tokens, 16.5 min | $0 |
+
+| 2026-10-28 | inventory v3 (60 samples) | groq/openai/gpt-oss-20b, seed 0 | 60 x 1 | 26/60 (0.433); 26 Groq `output_parse_failed` scored as wrong | 153 calls (bound 660), 73,609 tokens, 8.9 min | $0 |
+
+First `agentcheck compare` (2026-10-28): baseline qwen3.8-27b v3 60 x 1 (0.967) vs candidate gpt-oss-20b v3 60 x 1 (0.433): **REGRESSION**, difference -0.533, 95% CI [-0.667, -0.400], exact McNemar p = 4.657e-10, exit code 1. BH-flagged categories (FDR 0.05): most (p_BH 0.0417), portfolio (0.0312), total (0.0312); reorder 0.0625 not flagged. Caveat: this compares two different models on runs 6 days apart, so it is a sanity check of the pipeline, not a calibration result; many of the 26 failures are provider parse errors.
 
 Attempt 2026-10-28, v3 60 x 5 on qwen3.8-27b (no seed): stopped by the 1,000 output-tokens-per-minute limit after 93 of 300 sample-epochs, 187 calls, 142,553 tokens. Resumed 2026-10-28: stopped by the 200,000 tokens/day limit at 131 of 300 (264 calls, 204,469 tokens in the resumed part). To be resumed on later days.
 
