@@ -1,0 +1,22 @@
+# Example: gate a pull request on AgentCheck. Copy to .github/workflows/ in your repo.
+# Produce the two logs however you like (cached baseline, fresh candidate run); this
+# example expects them under evals/ in the repository.
+name: Agent regression gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  agentcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: princemittalr/agentcheck@main
+        with:
+          baseline: evals/baseline.eval
+          candidate: evals/candidate.eval
+          args: --alpha 0.05

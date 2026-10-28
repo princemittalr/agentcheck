@@ -39,6 +39,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=0.10,
         help="drop that 'more runs' advice is sized for (default 0.10)",
     )
+    c.add_argument(
+        "--report", help="append a Markdown report to this file (e.g. $GITHUB_STEP_SUMMARY)"
+    )
 
     s = sub.add_parser("summary", help="per-category summary of one log")
     s.add_argument("log", nargs="?")
@@ -109,21 +112,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as ex:
         print(f"error: {ex}", file=sys.stderr)
         return 2
+    out = []
     if args.looks > 1:
-        print(
+        out.append(
             f"Sequential look {args.look} of {args.looks}: tested at alpha {look_alpha:.4g} "
             f"(O'Brien-Fleming spending of {args.alpha} overall)."
         )
-    print(render(result, base, cand))
+    out.append(render(result, base, cand))
     if result.verdict is Verdict.INCONCLUSIVE:
         if args.look < args.looks:
-            print(
+            out.append(
                 f"Continue: run the next batch of epochs for both agents, then rerun with "
                 f"--look {args.look + 1} and every log so far (--baseline-also/--candidate-also)."
             )
         else:
-            print(more_runs_advice(bases, args.min_effect, args.seed))
+            out.append(more_runs_advice(bases, args.min_effect, args.seed))
+    text = "\n".join(out)
+    print(text)
+    if args.report:
+        with open(args.report, "a", encoding="utf-8") as f:
+            f.write(markdown_report(result.verdict, text))
     return 1 if result.verdict is Verdict.REGRESSION else 0
+
+
+def markdown_report(verdict: Verdict, text: str) -> str:
+    """The compare output as Markdown, for a GitHub job summary or a PR comment."""
+    return f"## AgentCheck: {verdict.value.upper()}\n\n```\n{text}\n```\n\n"
 
 
 def more_runs_advice(baselines: list[EvalLog], min_effect: float, seed: int) -> str:

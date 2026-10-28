@@ -97,6 +97,25 @@ judge pairs of replies (one right, one wrong) in both orders and tests for posit
 The exact number of judge calls and a worst-case token bound are printed and checked
 against the caps before anything is sent.
 
+Measured once (gpt-oss-120b judging gpt-oss-20b on v3): kappa 0.933, 95% CI [0.841, 1.000];
+2 lenient errors in 60; no position bias in 32 pairs. See PROGRESS.md.
+
+### GitHub Action
+
+```yaml
+- uses: princemittalr/agentcheck@main
+  with:
+    baseline: evals/baseline.eval
+    candidate: evals/candidate.eval
+    args: --alpha 0.05            # any other `agentcheck compare` options
+```
+
+Runs `agentcheck compare`, writes the report to the job summary, sets the `verdict`
+output, and fails the step on a regression (an inconclusive result passes). The action
+does not run your agent: produce the two logs in earlier steps. Full example:
+`examples/agentcheck-gate.yml`. To try it offline, `python -m agentcheck.demo DIR --name a`
+writes a mockllm log (`--wrong N` breaks N questions).
+
 ### Recording and replaying tool calls
 
 ```
@@ -154,8 +173,12 @@ changes between runs (a live API, a clock) is not mistaken for an agent regressi
 - The task suite is synthetic warehouse questions in 8 categories: v3 has 60, v4 adds 60 more
   (120) on the same catalog because 60 samples cannot reliably detect a 10-point drop
   (see PROGRESS.md, power results).
-- False-alarm and detection rates are not measured yet (M5); until then the verdicts are
-  untested in the sense that matters.
+- False-alarm and detection rates are measured on synthetic pools only; real pools from
+  logged runs are pending (PROGRESS.md, M5).
+- The LLM judge was calibrated once (one judge, one graded model, 60 replies); it is not
+  part of the verdict.
+- The GitHub Action needs both logs in the workspace; it does not run evals or cache
+  baselines, and it is tested only on ubuntu-latest.
 - "How many more runs" (printed when inconclusive) needs a baseline with at least 2 epochs per sample, and only varies epochs at the current suite size; it is a simulation on the baseline's own outcomes, so it inherits that log's noise.
 - Record/replay covers tools with scalar results (text, numbers, booleans) keyed on exact
   arguments. An agent that calls a tool with arguments never recorded fails in replay mode;

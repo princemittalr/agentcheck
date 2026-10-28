@@ -13,8 +13,8 @@ Last updated: 2026-10-28
 | M4 | Tool record/replay | Done (2026-10-28, efcd2f3): cassette record/replay, runner `--tools/--cassette` |
 | M5 | Calibration benchmark (A/A and injected regressions) | In progress (synthetic calibration done; real pools pending) |
 | M6 | Power analysis and sequential stopping | Done (2026-10-28, 49e89cc): power grid, more-runs advice, sequential looks |
-| M7 | LLM-judge calibration (kappa, position bias) | In progress (step 1: kappa, position test, `agentcheck judge`) |
-| M8 | GitHub Action and write-up | Not started |
+| M7 | LLM-judge calibration (kappa, position bias) | Done (2026-10-28, 28bb777): gpt-oss-120b kappa 0.933 [0.841, 1.000], no position bias in 32 pairs |
+| M8 | GitHub Action and write-up | In progress (step 1: composite action, CI self-test) |
 
 ### M0 steps
 - [x] Step 1: local scaffold (pyproject, ruff, mypy, pytest, README, PROGRESS), verified on Windows / Python 3.14.8
@@ -57,7 +57,11 @@ Last updated: 2026-10-28
 
 ### M7 steps
 - [x] Step 1: Cohen's kappa with Fleiss-Cohen-Everitt SE (checked against statsmodels), exact position-bias test, `agentcheck judge` (grades a log's replies against the deterministic scorer; pairwise position test against a second log; exact call count and token bound before sending)
-- [ ] Step 2: real judge run (gpt-oss-120b judging gpt-oss-20b's v3 replies, position test against qwen's)
+- [x] Step 2: real judge run (gpt-oss-120b judging gpt-oss-20b's v3 replies, position test against qwen's); results below
+
+### M8 steps
+- [ ] Step 1: composite GitHub Action (`action.yml`: installs AgentCheck, runs `compare`, fails on regression, writes the job summary, `verdict` output); `compare --report`; offline demo logs (`python -m agentcheck.demo`); CI job running the action on an A/A pair (must pass) and a 12-broken candidate (must fail); example workflow in `examples/`
+- [ ] Step 2: write-up
 
 ## Key design decisions
 
@@ -77,6 +81,8 @@ Last updated: 2026-10-28
 - **Five difficulty categories (single/value/total/most/unknown)**: a suite every model aces (ceiling effect) can't show a regression; `unknown` uses near-miss SKUs to test refusing to guess.
 - **Targets checked by hand in tests**, not only recomputed by the code that builds them.
 - **message_limit raised 8 -> 16 -> 24** for multi-lookup questions: worst case 11 calls per sample.
+- **GitHub Action is a composite action** (M8): no Docker image to build or publish; it installs the package from the action's own checkout, so the action and the CLI cannot drift. Exit code 1 (regression) fails the step; inconclusive passes, because "not enough evidence" is not a failure, and the job summary shows the more-runs advice.
+- **Action self-test in CI on mockllm logs**: proves the action wiring (pass on A/A, fail on a broken candidate) with no API key and no cost.
 - **Primary model: `groq/qwen/qwen3.8-27b`**: 0 output errors and fewest calls of the 3 tool-calling models on MNV's key; gpt-oss-20b's 13/36 parse failures would swamp a 10-point regression.
 - **gpt-oss-20b kept as a candidate "weaker model" regression for M5**: its failures are real failures of that agent stack.
 - **Suite v3 adds harder categories (reorder, portfolio, orders)**: at 100% baseline, A/A tests are vacuous (no discordant pairs, so a false alarm is impossible) and nothing can register as an improvement.
@@ -236,6 +242,26 @@ anti-conservative at n = 60 (false alarms 5.4% and 6.0%), so its extra detection
 partly bought with false alarms.
 
 Note: single runs, no intervals yet (Wilson intervals arrive in M2). n = 5 is far too small for any conclusion; 5/5 also shows the ceiling effect that motivated the harder suite in step 3.
+
+### Judge calibration (2026-10-28, commit 28bb777)
+
+Judge `groq/openai/gpt-oss-120b`, temperature 0, graded gpt-oss-20b's replies on suite v3 (60 x 1);
+position test on the pairs where exactly one of gpt-oss-20b and qwen3.8-27b was right.
+Planned: exactly 124 judge calls, worst case 155,938 tokens; cost $0 (free tier).
+
+| Measure | Result |
+|---|---|
+| Replies graded (unparsed) | 60 (0) |
+| Agreement with the deterministic scorer | 0.967 (chance 0.504) |
+| Cohen's kappa | 0.933, 95% CI [0.841, 1.000], n = 60 |
+| Judge errors | CORRECT for 2 wrong replies, INCORRECT for 0 right ones |
+| Position test (32 pairs x 2 orders, 0 unparsed) | consistent 32/32; first shown won both times 0, second 0; p = 1 |
+
+Findings: the judge agrees with the scorer almost perfectly and its only errors are lenient
+(2 false passes), so a judge-scored suite would slightly overstate pass rates. No position
+bias was seen, but with 0 inconsistent pairs the test has nothing to work with; the 32/32
+only bounds the inconsistency rate (Wilson 95% upper bound about 0.11). One model, one
+suite, 60 replies: the deterministic scorer stays the only pass/fail path.
 
 ## Open questions
 

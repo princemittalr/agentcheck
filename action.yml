@@ -1,0 +1,57 @@
+name: AgentCheck compare
+description: >-
+  Paired statistical comparison of two Inspect eval logs. Fails the step when the
+  candidate is a significant regression from the baseline.
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  baseline:
+    description: Baseline .eval log
+    required: true
+  candidate:
+    description: Candidate .eval log
+    required: true
+  args:
+    description: Extra `agentcheck compare` options, e.g. "--alpha 0.01 --looks 5 --look 2"
+    required: false
+    default: ""
+  python-version:
+    description: Python used to run AgentCheck
+    required: false
+    default: "3.12"
+
+outputs:
+  verdict:
+    description: regression, improvement or inconclusive
+    value: ${{ steps.compare.outputs.verdict }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v7
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install AgentCheck
+      shell: bash
+      run: python -m pip install "$GITHUB_ACTION_PATH"
+
+    # Exit code 1 (regression) fails the step; 2 means bad input and fails it too.
+    - name: Compare
+      id: compare
+      shell: bash
+      env:
+        BASELINE: ${{ inputs.baseline }}
+        CANDIDATE: ${{ inputs.candidate }}
+        EXTRA: ${{ inputs.args }}
+      run: |
+        set +e
+        # EXTRA is split on spaces on purpose: it holds several options.
+        agentcheck compare "$BASELINE" "$CANDIDATE" $EXTRA --report "$GITHUB_STEP_SUMMARY" | tee agentcheck-out.txt
+        code=${PIPESTATUS[0]}
+        verdict=$(sed -n 's/^VERDICT: //p' agentcheck-out.txt | tr '[:upper:]' '[:lower:]')
+        echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+        rm -f agentcheck-out.txt
+        exit $code

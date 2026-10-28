@@ -47,3 +47,48 @@ jobs:
 
       - name: Tests
         run: pytest
+
+  # Runs the composite action in action.yml on offline demo logs: an A/A pair must pass,
+  # and a candidate with 12 of 60 questions broken must fail the step.
+  action:
+    name: action self-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Write demo logs
+        run: |
+          python -m pip install .
+          python -m agentcheck.demo demo --name baseline
+          python -m agentcheck.demo demo --name same
+          python -m agentcheck.demo demo --name broken --wrong 12
+
+      - name: A/A must pass
+        id: aa
+        uses: ./
+        with:
+          baseline: demo/baseline.eval
+          candidate: demo/same.eval
+
+      - name: Broken candidate must fail
+        id: broken
+        continue-on-error: true
+        uses: ./
+        with:
+          baseline: demo/baseline.eval
+          candidate: demo/broken.eval
+
+      - name: Check outcomes
+        env:
+          AA: ${{ steps.aa.outputs.verdict }}
+          BROKEN: ${{ steps.broken.outputs.verdict }}
+          OUTCOME: ${{ steps.broken.outcome }}
+        run: |
+          echo "A/A: $AA; broken: $BROKEN, step $OUTCOME"
+          test "$AA" = inconclusive
+          test "$BROKEN" = regression
+          test "$OUTCOME" = failure
