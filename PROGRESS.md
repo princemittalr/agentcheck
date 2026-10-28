@@ -14,7 +14,7 @@ Last updated: 2026-10-28
 | M5 | Calibration benchmark (A/A and injected regressions) | In progress (synthetic calibration done; real pools pending) |
 | M6 | Power analysis and sequential stopping | Done (2026-10-28, 49e89cc): power grid, more-runs advice, sequential looks |
 | M7 | LLM-judge calibration (kappa, position bias) | Done (2026-10-28, 28bb777): gpt-oss-120b kappa 0.933 [0.841, 1.000], no position bias in 32 pairs |
-| M8 | GitHub Action and write-up | In progress (step 1: composite action, CI self-test) |
+| M8 | GitHub Action and write-up | Done (2026-10-28): action (f64987c, CI green incl. self-test), docs/WRITEUP.md |
 
 ### M0 steps
 - [x] Step 1: local scaffold (pyproject, ruff, mypy, pytest, README, PROGRESS), verified on Windows / Python 3.14.8
@@ -60,8 +60,8 @@ Last updated: 2026-10-28
 - [x] Step 2: real judge run (gpt-oss-120b judging gpt-oss-20b's v3 replies, position test against qwen's); results below
 
 ### M8 steps
-- [ ] Step 1: composite GitHub Action (`action.yml`: installs AgentCheck, runs `compare`, fails on regression, writes the job summary, `verdict` output); `compare --report`; offline demo logs (`python -m agentcheck.demo`); CI job running the action on an A/A pair (must pass) and a 12-broken candidate (must fail); example workflow in `examples/`
-- [ ] Step 2: write-up
+- [x] Step 1 (f64987c, CI green on all 4 jobs including the action self-test): composite GitHub Action (`action.yml`: installs AgentCheck, runs `compare`, fails on regression, writes the job summary, `verdict` output); `compare --report`; offline demo logs (`python -m agentcheck.demo`); CI job running the action on an A/A pair (must pass) and a 12-broken candidate (must fail); example workflow in `examples/`
+- [x] Step 2: write-up (docs/WRITEUP.md): design, calibration, power, sequential, judge results, what is not established
 
 ## Key design decisions
 

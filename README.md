@@ -129,13 +129,17 @@ and never calls the tool; a call that was not recorded fails the run instead of 
 guessed. Use it so baseline and candidate see identical tool outputs, and a tool that
 changes between runs (a live API, a clock) is not mistaken for an agent regression.
 
-## How it works (planned)
+## How it works
 
-1. Run a small agentic task suite in Inspect with several epochs per sample.
+1. Run the task suite in Inspect with one or more epochs per sample.
 2. Pair per-sample results from the baseline and candidate logs.
-3. Apply paired tests (exact McNemar for pass/fail, paired bootstrap for continuous
-   scores), correct for multiple metrics (Benjamini–Hochberg), and report intervals.
-4. Use power analysis and a sequential test to decide when more runs are needed.
+3. Decide with a paired test (exact McNemar for one epoch, sign-flip permutation for
+   several), report a paired cluster-bootstrap interval, and explain by category
+   (Benjamini–Hochberg).
+4. When inconclusive, estimate by simulation how many more epochs are needed; optionally
+   stop early with planned sequential looks.
+
+The full write-up, with calibration and power results: [docs/WRITEUP.md](docs/WRITEUP.md).
 
 ## Statistical assumptions
 
