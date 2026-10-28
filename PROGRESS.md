@@ -10,8 +10,8 @@ Last updated: 2026-10-28
 | M1 | Inspect task suite, 30+ samples, epochs >= 5 | In progress (step 5: 60 x 5 run resuming daily) |
 | M2 | Statistics core, verified against SciPy/statsmodels | Done (2026-10-28): Wilson, exact McNemar, cluster bootstrap, Benjamini-Hochberg; power/sequential in M6, kappa in M7 |
 | M3 | Log reader and `agentcheck compare` | Done (2026-10-28): first real verdict recorded |
-| M4 | Tool record/replay | Done (2026-10-28): cassette record/replay, runner `--tools/--cassette` |
-| M5 | Calibration benchmark (A/A and injected regressions) | Not started |
+| M4 | Tool record/replay | Done (2026-10-28, efcd2f3): cassette record/replay, runner `--tools/--cassette` |
+| M5 | Calibration benchmark (A/A and injected regressions) | In progress (step 1: harness + synthetic pools) |
 | M6 | Power analysis and sequential stopping | Not started |
 | M7 | LLM-judge calibration (kappa, position bias) | Not started |
 | M8 | GitHub Action and write-up | Not started |
@@ -41,6 +41,12 @@ Last updated: 2026-10-28
 
 ### M4 steps
 - [x] Step 1: `agentcheck.replay` (Cassette, `recorded` wrapper via Inspect `ToolDef`), task args `tools`/`cassette`, runner flags; tested standalone and inside real Inspect evals (replay serves an edited cassette value; a replay miss makes the run status `error`)
+
+### M5 steps
+- [x] Step 1: `agentcheck calibrate` (pool resampling, A/A false alarms, injected sample-level drop, Wilson CIs), synthetic Beta pools, `decide()` fast path proven equal to `compare_records`
+- [ ] Step 2: synthetic results in 3 regimes x {1, 5} epochs (MNV runs, numbers pasted)
+- [ ] Step 3: real pool: qwen3.8-27b 60 x 5 (when the daily-resumed run completes)
+- [ ] Step 4: real pool: gpt-oss-20b 60 x 5 (noisy regime)
 
 ## Key design decisions
 
@@ -107,6 +113,11 @@ Last updated: 2026-10-28
 - **Cassette written atomically after every new entry**: free-tier runs get interrupted; a recording survives and resumes.
 - **Cassette key = tool name + JSON of arguments with sorted keys**: argument order never matters; any other difference in arguments is a different call.
 - **Tool wrapper keeps the tool's name, description and parameter schema**: the model sees exactly the same tool in all three modes (tested).
+
+- **Calibration resamples a fixed pool of logged epochs** (free-tier token limits rule out thousands of fresh runs): per sample, simulated epochs are drawn with replacement from that sample's pooled outcomes. Plug-in assumption: the pooled rate is the true rate; a pool needs >= 2 epochs per sample or every simulated run is identical.
+- **Injected regression = whole samples break** (every epoch fails) with probability drop / pool pass rate, so the expected drop is exactly `drop` (tested). This models "the change broke some questions", the common real case, rather than uniform noise.
+- **A/A false alarm = any non-inconclusive verdict** (two-sided, both directions count); detection = REGRESSION verdicts only.
+- **2,000 bootstrap resamples inside calibration** (10,000 in `compare`): the per-comparison p-value error is about 0.005 near 0.05, small next to the Wilson CI of a 1,000-rep rate estimate.
 
 ## Measured results
 

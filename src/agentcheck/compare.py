@@ -8,7 +8,7 @@ explain where a change happened but do not change the verdict.
 """
 
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -91,6 +91,31 @@ def _test(
         high=boot.high,
         p_value=p,
     )
+
+
+def decide(
+    base: Mapping[str, Sequence[bool]],
+    cand: Mapping[str, Sequence[bool]],
+    *,
+    alpha: float = 0.05,
+    n_resamples: int = 10_000,
+    seed: int = 0,
+) -> Verdict:
+    """The primary test only, without the report: same verdict as compare_records, faster."""
+    if all(len(v) == 1 for v in (*base.values(), *cand.values())):
+        counts = paired_counts(
+            {k: v[0] for k, v in base.items()}, {k: v[0] for k, v in cand.items()}
+        )
+        p = exact_mcnemar_p(counts.baseline_only, counts.candidate_only)
+        diff = float(counts.candidate_only - counts.baseline_only)
+    else:
+        boot = paired_bootstrap(
+            base, cand, n_resamples=n_resamples, confidence=1 - alpha, seed=seed
+        )
+        p, diff = boot.p_value, boot.difference
+    if p >= alpha:
+        return Verdict.INCONCLUSIVE
+    return Verdict.REGRESSION if diff < 0 else Verdict.IMPROVEMENT
 
 
 def compare_records(

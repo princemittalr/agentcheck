@@ -46,6 +46,17 @@ completed samples; the budget check applies to what is left:
 python -m agentcheck.run --resume logs/<interrupted>.eval --max-calls N --max-tokens N
 ```
 
+### Calibration
+
+```
+agentcheck calibrate logs\a.eval logs\b.eval --epochs 1      # pool of one agent's logged epochs
+agentcheck calibrate --synthetic --mean 0.8 --epochs 5           # synthetic pool
+```
+
+Simulates many baseline/candidate pairs by resampling a pool of logged epochs (samples
+stay the unit). Reports the A/A false-alarm rate and the detection rate for an injected
+pass-rate drop (default 10 points), each with a 95% Wilson interval.
+
 ### Recording and replaying tool calls
 
 ```
@@ -87,8 +98,10 @@ changes between runs (a live API, a clock) is not mistaken for an agent regressi
 - Unit tests with pytest; property-based tests with Hypothesis.
 - Statistics implementations are checked against SciPy/statsmodels on random inputs and
   against textbook examples.
-- Calibration (planned): A/A tests for the false-alarm rate and injected regressions for
-  the detection rate, each measured over many repetitions.
+- Calibration (`agentcheck calibrate`): A/A comparisons for the false-alarm rate and
+  injected drops for the detection rate, simulated by resampling a fixed pool of logged
+  epochs. The resampling treats each sample's pooled pass rate as its true rate, so it
+  cannot reveal drift the pool never saw (provider changes, new failure modes).
 
 ## Limitations
 
