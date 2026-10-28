@@ -27,7 +27,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     # Reference implementations for tests only. The statistics core never imports SciPy.
-    "scipy>=1.13",
+    "scipy>=1.15",
 ]
 # Model provider for real runs. Not needed for tests, which use Inspect's mockllm.
 groq = [

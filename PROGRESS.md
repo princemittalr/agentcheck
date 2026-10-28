@@ -8,7 +8,7 @@ Last updated: 2026-10-28
 |---|---|---|
 | M0 | Repo scaffold: pyproject, ruff, mypy, pytest, CI, README, PROGRESS | Done (2026-10-22) |
 | M1 | Inspect task suite, 30+ samples, epochs >= 5 | In progress (step 5: 60 x 5 run resuming daily) |
-| M2 | Statistics core, verified against SciPy/statsmodels | In progress (steps 1-2 done: Wilson interval, exact McNemar) |
+| M2 | Statistics core, verified against SciPy/statsmodels | In progress (steps 1-3 done: Wilson, exact McNemar, cluster bootstrap) |
 | M3 | Log reader and `agentcheck compare` | Not started |
 | M4 | Tool record/replay | Not started |
 | M5 | Calibration benchmark (A/A and injected regressions) | Not started |
@@ -32,6 +32,8 @@ Last updated: 2026-10-28
 ### M2 steps (tests written first)
 - [x] Step 1: `wilson_interval` (stats/intervals.py) against Newcombe (1998) Table I, closed forms at k=0 and k=n, and SciPy `binomtest(...).proportion_ci(method="wilson")` on random inputs
 - [x] Step 2: `paired_counts` + exact McNemar (stats/mcnemar.py), checked by hand and against SciPy `binomtest(b, b+c, 0.5)`
+- [x] Step 3: paired cluster bootstrap over samples for multi-epoch runs (stats/bootstrap.py), checked against SciPy's percentile bootstrap and normal theory
+- [ ] Step 4: Benjamini-Hochberg across categories (closes M2; power and sequential tests are M6, kappa is M7)
 
 ## Key design decisions
 
@@ -83,7 +85,8 @@ Last updated: 2026-10-28
 - **Exact McNemar (binomial on discordant pairs), not the chi-square version**: our discordant counts are small (often under 25), where the chi-square approximation is poor. With 5 or fewer discordant pairs no result can reach p < 0.05.
 - **Two-sided p-value = min(1, 2 x lower tail)**: equals SciPy's method for p = 1/2 because the distribution is symmetric. Computed with exact integers, so no underflow or rounding at large n.
 - **Runs must cover exactly the same samples**: pairing on different sample sets would silently compare different questions; mismatches are refused.
-- **One outcome per sample for now**: with epochs, a sample's 5 results are clustered; how to reduce them per sample (or bootstrap over samples) is M2 step 3.
+- **Exact McNemar for single-epoch runs; paired cluster bootstrap for multi-epoch runs**: with epochs, each sample is reduced to (candidate rate - baseline rate) and the samples are resampled, never the epochs. A test proves 5 copied epochs give exactly the same interval as 1.
+- **Percentile bootstrap, 10,000 resamples, stdlib `random.Random(seed)`**: deterministic per seed, no NumPy at runtime. Percentile intervals can under-cover at small n; BCa is a possible upgrade if M5's calibration shows it.
 
 ## Measured results
 
