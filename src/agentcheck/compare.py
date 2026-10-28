@@ -2,7 +2,9 @@
 
 Primary test (decides the verdict):
 - one epoch per sample in both logs: exact McNemar on the paired pass/fail table;
-- otherwise: paired cluster bootstrap over samples (epochs are never resampled).
+- otherwise: paired sign-flip permutation test on per-sample differences (exact under
+  exchangeability, so A/A false alarms stay <= alpha); the interval comes from the
+  paired cluster bootstrap. Samples are the unit; epochs are never resampled alone.
 Per-category tests use the same method and are adjusted with Benjamini-Hochberg; they
 explain where a change happened but do not change the verdict.
 """
@@ -14,9 +16,10 @@ from enum import StrEnum
 
 from inspect_ai.log import EvalLog
 
-from agentcheck.stats.bootstrap import paired_bootstrap
+from agentcheck.stats.bootstrap import paired_bootstrap, per_sample_differences
 from agentcheck.stats.mcnemar import exact_mcnemar_p, paired_counts
 from agentcheck.stats.multiple import bh_adjust
+from agentcheck.stats.permutation import sign_flip_p
 from agentcheck.summary import SampleRecord, per_sample
 
 
@@ -28,7 +31,7 @@ class Verdict(StrEnum):
 
 @dataclass(frozen=True)
 class TestResult:
-    method: str  # "mcnemar" or "bootstrap"
+    method: str  # "mcnemar" or "permutation"
     n_samples: int
     baseline_rate: float
     candidate_rate: float
@@ -79,8 +82,9 @@ def _test(
         p = exact_mcnemar_p(counts.baseline_only, counts.candidate_only)
         method = "mcnemar"
     else:
-        p = boot.p_value
-        method = "bootstrap"
+        diffs = per_sample_differences(base_passes, cand_passes)
+        p = sign_flip_p(diffs, n_resamples=n_resamples, seed=seed)
+        method = "permutation"
     return TestResult(
         method=method,
         n_samples=boot.n_samples,
@@ -109,10 +113,9 @@ def decide(
         p = exact_mcnemar_p(counts.baseline_only, counts.candidate_only)
         diff = float(counts.candidate_only - counts.baseline_only)
     else:
-        boot = paired_bootstrap(
-            base, cand, n_resamples=n_resamples, confidence=1 - alpha, seed=seed
-        )
-        p, diff = boot.p_value, boot.difference
+        diffs = per_sample_differences(base, cand)
+        p = sign_flip_p(diffs, n_resamples=n_resamples, seed=seed)
+        diff = sum(diffs)
     if p >= alpha:
         return Verdict.INCONCLUSIVE
     return Verdict.REGRESSION if diff < 0 else Verdict.IMPROVEMENT

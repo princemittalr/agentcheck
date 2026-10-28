@@ -11,7 +11,7 @@ Last updated: 2026-10-28
 | M2 | Statistics core, verified against SciPy/statsmodels | Done (2026-10-28): Wilson, exact McNemar, cluster bootstrap, Benjamini-Hochberg; power/sequential in M6, kappa in M7 |
 | M3 | Log reader and `agentcheck compare` | Done (2026-10-28): first real verdict recorded |
 | M4 | Tool record/replay | Done (2026-10-28, efcd2f3): cassette record/replay, runner `--tools/--cassette` |
-| M5 | Calibration benchmark (A/A and injected regressions) | In progress (step 1: harness + synthetic pools) |
+| M5 | Calibration benchmark (A/A and injected regressions) | In progress (step 2: synthetic results; bootstrap verdict replaced by permutation test) |
 | M6 | Power analysis and sequential stopping | Not started |
 | M7 | LLM-judge calibration (kappa, position bias) | Not started |
 | M8 | GitHub Action and write-up | Not started |
@@ -44,7 +44,8 @@ Last updated: 2026-10-28
 
 ### M5 steps
 - [x] Step 1: `agentcheck calibrate` (pool resampling, A/A false alarms, injected sample-level drop, Wilson CIs), synthetic Beta pools, `decide()` fast path proven equal to `compare_records`
-- [ ] Step 2: synthetic results in 3 regimes x {1, 5} epochs (MNV runs, numbers pasted)
+- [x] Step 2a: synthetic results with the bootstrap verdict (below): multi-epoch A/A false alarms 0.054 and 0.060, over target
+- [ ] Step 2b: rerun with the sign-flip permutation verdict
 - [ ] Step 3: real pool: qwen3.8-27b 60 x 5 (when the daily-resumed run completes)
 - [ ] Step 4: real pool: gpt-oss-20b 60 x 5 (noisy regime)
 
@@ -119,6 +120,8 @@ Last updated: 2026-10-28
 - **A/A false alarm = any non-inconclusive verdict** (two-sided, both directions count); detection = REGRESSION verdicts only.
 - **2,000 bootstrap resamples inside calibration** (10,000 in `compare`): the per-comparison p-value error is about 0.005 near 0.05, small next to the Wilson CI of a 1,000-rep rate estimate.
 
+- **Multi-epoch verdict = paired sign-flip permutation test, not the bootstrap p-value** (changed after step 2a): under A/A the runs are exchangeable, so flipping signs of per-sample differences gives the exact null distribution and false alarms <= alpha at any n. Exact enumeration up to 16 non-zero differences, else Monte Carlo with the +1 correction (Phipson & Smyth 2010). On {-1, 0, +1} differences it equals exact McNemar (tested). The bootstrap still provides the reported interval.
+
 ## Measured results
 
 Every number here comes from a pasted run output.
@@ -141,6 +144,24 @@ Attempt 2026-10-22, 36 x 1 (after the rate-limit fix): stopped by Groq 400 `outp
 First `agentcheck compare` (2026-10-28): baseline qwen3.8-27b v3 60 x 1 (0.967) vs candidate gpt-oss-20b v3 60 x 1 (0.433): **REGRESSION**, difference -0.533, 95% CI [-0.667, -0.400], exact McNemar p = 4.657e-10, exit code 1. BH-flagged categories (FDR 0.05): most (p_BH 0.0417), portfolio (0.0312), total (0.0312); reorder 0.0625 not flagged. Caveat: this compares two different models on runs 6 days apart, so it is a sanity check of the pipeline, not a calibration result; many of the 26 failures are provider parse errors.
 
 Attempt 2026-10-28, v3 60 x 5 on qwen3.8-27b (no seed): stopped by the 1,000 output-tokens-per-minute limit after 93 of 300 sample-epochs, 187 calls, 142,553 tokens. Resumed 2026-10-28: stopped by the 200,000 tokens/day limit at 131 of 300 (264 calls, 204,469 tokens in the resumed part). To be resumed on later days.
+
+### Calibration, synthetic pools (2026-10-28, 1,000 reps, alpha 0.05, 10-point drop, seed 0)
+
+Verdict for multi-epoch runs = **percentile bootstrap p-value** (superseded, see decisions):
+
+| Pool (Beta mean, spread) | Pool pass rate | Epochs/run | A/A false alarms (95% CI) | Detect -0.10 (95% CI) |
+|---|---|---|---|---|
+| 0.95, 1 | 0.963 | 1 (McNemar) | 0/1000 = 0.000 [0.000, 0.004] | 482/1000 = 0.482 [0.451, 0.513] |
+| 0.95, 1 | 0.963 | 5 (bootstrap) | 31/1000 = 0.031 [0.022, 0.044] | 873/1000 = 0.873 [0.851, 0.892] |
+| 0.8, 4 | 0.800 | 1 (McNemar) | 25/1000 = 0.025 [0.017, 0.037] | 211/1000 = 0.211 [0.187, 0.237] |
+| 0.8, 4 | 0.800 | 5 (bootstrap) | **54/1000 = 0.054** [0.042, 0.070] | 666/1000 = 0.666 [0.636, 0.695] |
+| 0.6, 4 | 0.563 | 1 (McNemar) | 29/1000 = 0.029 [0.020, 0.041] | 161/1000 = 0.161 [0.140, 0.185] |
+| 0.6, 4 | 0.563 | 5 (bootstrap) | **60/1000 = 0.060** [0.047, 0.076] | 620/1000 = 0.620 [0.590, 0.650] |
+
+Findings: (1) exact McNemar keeps false alarms well under 5% but detects a 10-point drop
+only 16-48% of the time from one epoch of 60 samples; (2) the percentile bootstrap is
+anti-conservative at n = 60 (false alarms 5.4% and 6.0%), so its extra detections are
+partly bought with false alarms.
 
 Note: single runs, no intervals yet (Wilson intervals arrive in M2). n = 5 is far too small for any conclusion; 5/5 also shows the ceiling effect that motivated the harder suite in step 3.
 

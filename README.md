@@ -85,8 +85,10 @@ changes between runs (a live API, a clock) is not mistaken for an agent regressi
 - **Pairing.** Baseline and candidate must run the same samples; anything else is refused.
 - **One epoch: exact McNemar** on discordant pairs. Exact, but discrete: with 5 or fewer
   discordant samples no result can reach p < 0.05, so small changes are inconclusive.
-- **Several epochs: paired cluster bootstrap** (percentile interval, 10,000 resamples).
-  Approximate; can under-cover with few samples, which is why calibration (M5) matters.
+- **Several epochs: paired sign-flip permutation test** on per-sample differences, exact
+  under exchangeability (A/A false alarms <= alpha at any sample count). The reported
+  interval is a paired cluster bootstrap (percentile, 10,000 resamples), which can
+  under-cover with few samples; it is descriptive and does not decide the verdict.
 - **Per-category tests** are Benjamini-Hochberg adjusted (valid for independent or
   positively dependent tests). With 6-8 samples per category they have little power; they
   explain where a change happened and never change the verdict.

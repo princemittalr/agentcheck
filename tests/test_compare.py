@@ -54,11 +54,11 @@ def test_improvement() -> None:
     assert compare_records(base, cand).verdict is Verdict.IMPROVEMENT
 
 
-def test_multi_epoch_uses_the_bootstrap() -> None:
+def test_multi_epoch_uses_the_permutation_test() -> None:
     base = records({f"s{i}": [True] * 5 for i in range(60)})
     cand = records({f"s{i}": [True] * 5 if i >= 12 else [False] * 5 for i in range(60)})
     c = compare_records(base, cand)
-    assert c.overall.method == "bootstrap"
+    assert c.overall.method == "permutation"
     assert c.verdict is Verdict.REGRESSION
     assert c.overall.high < 0
 
